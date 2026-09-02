@@ -54,6 +54,8 @@ background-opacity =0.85
 background-blur = false
 font-size = 10
 
+window-decoration = none
+gtk-titlebar = false
 
 keybind = opt+h=goto_split:left
 keybind = opt+j=goto_split:bottom	
