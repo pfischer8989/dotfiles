@@ -1,12 +1,16 @@
 # dotfiles
 
-My personal configuration files for nvim, tmux, and ghostty. Managed with [GNU Stow](https://www.gnu.org/software/stow/).
+My personal configuration files for nvim, tmux, ghostty, and AI coding agents. Managed with [GNU Stow](https://www.gnu.org/software/stow/).
 
 ## Structure
 
 ```
 dotfiles/
 ├── nvim/.config/nvim/
+├── herdr-macos/.config/herdr/
+├── herdr-linux/.config/herdr/
+├── hermes/.hermes/skills/
+├── opencode/.config/opencode/
 ├── tmux/.tmux.conf
 └── ghostty/.config/ghostty/config
 ```
@@ -23,9 +27,26 @@ brew install stow
 git clone https://github.com/vossenwout/pookie-dotfiles.git ~/dotfiles
 cd ~/dotfiles
 stow neovim
+# macOS
+stow herdr-macos
+
+# Linux
+stow herdr-linux
+
+stow hermes
+stow opencode
 stow tmux
 stow ghostty
 ```
+
+The OpenCode package contains user-wide Empire worker defaults and reusable
+skills. The Hermes package contains only the portable Empire controller skill;
+Hermes's main `config.yaml`, `.env`, sessions, databases, logs, and bundled
+skills remain machine-local. Firstmate is kept as its own checkout because its `AGENTS.md`, private
+home state, worktrees, and internal skills are part of its supervisor runtime;
+they should not be copied into the global OpenCode configuration. Hermes will
+use `~/.local/bin/hermes` and `~/.hermes/` on macOS and Linux, while platform
+service files remain separate packages.
 
 This creates symlinks from the expected config locations to the files in this repo.
 

@@ -1,0 +1,8 @@
+# Herdr configuration for macOS.
+# Managed with GNU Stow from ~/dotfiles.
+
+onboarding = false
+
+[theme]
+name = "solarized"
+auto_switch = false

@@ -1,0 +1,8 @@
+# Herdr configuration for Linux.
+# Managed with GNU Stow from ~/dotfiles.
+
+onboarding = false
+
+[theme]
+name = "tokyo-night"
+auto_switch = false

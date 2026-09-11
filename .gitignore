@@ -1,2 +1,37 @@
 pi/.pi/agent/
 .env
+
+# Environment files and secrets. Keep example templates trackable.
+**/.env
+**/.env.*
+!.env.example
+!**/.env.example
+
+# Hermes: config and runtime state may contain personal settings, identifiers,
+# credentials, sessions, databases, logs, caches, and generated skills.
+hermes/.hermes/config.yaml
+hermes/.hermes/.env
+hermes/.hermes/sessions/
+hermes/.hermes/logs/
+hermes/.hermes/state/
+hermes/.hermes/memories/
+hermes/.hermes/checkpoints/
+hermes/.hermes/*.db
+hermes/.hermes/*.db-*
+hermes/.hermes/models_*_cache.json
+hermes/.hermes/provider_models_cache.json
+hermes/.hermes/skills/.bundled_manifest
+hermes/.hermes/skills/.curator_*
+hermes/.hermes/skills/.usage.json*
+hermes/.hermes/skills/.*/
+
+# Firstmate private home state, if a checkout is ever placed in this repo.
+firstmate/.env
+firstmate/data/
+firstmate/state/
+firstmate/config/
+firstmate/projects/
+firstmate/.no-mistakes/
+
+# Installed JavaScript dependencies are not dotfiles.
+**/node_modules/
