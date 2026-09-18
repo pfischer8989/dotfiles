@@ -27,4 +27,4 @@ description: Use when implementing, debugging, reviewing, or investigating code 
   skipped.
 
 Do not merge, push, publish, or release unless the task explicitly authorizes
-that action. Firstmate owns worktree and delivery mechanics.
+that action.

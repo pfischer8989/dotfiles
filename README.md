@@ -9,8 +9,7 @@ dotfiles/
 ├── nvim/.config/nvim/
 ├── herdr-macos/.config/herdr/
 ├── herdr-linux/.config/herdr/
-├── hermes/.hermes/skills/
-├── opencode/.config/opencode/
+├── opencode/.config/opencode/    # AGENTS.md, skills/, agents/ (personalities)
 ├── tmux/.tmux.conf
 └── ghostty/.config/ghostty/config
 ```
@@ -33,20 +32,16 @@ stow herdr-macos
 # Linux
 stow herdr-linux
 
-stow hermes
 stow opencode
 stow tmux
 stow ghostty
 ```
 
-The OpenCode package contains user-wide Empire worker defaults and reusable
-skills. The Hermes package contains only the portable Empire controller skill;
-Hermes's main `config.yaml`, `.env`, sessions, databases, logs, and bundled
-skills remain machine-local. Firstmate is kept as its own checkout because its `AGENTS.md`, private
-home state, worktrees, and internal skills are part of its supervisor runtime;
-they should not be copied into the global OpenCode configuration. Hermes will
-use `~/.local/bin/hermes` and `~/.hermes/` on macOS and Linux, while platform
-service files remain separate packages.
+The OpenCode package contains user-wide worker defaults (`AGENTS.md`), reusable
+skills (`skills/`), and the Empire agent personalities (`agents/` — linus,
+rubin, jocko, elon, watts). Hermes (the Empire controller) is Python code in its
+own repo (`~/Dropbox/Development/Personal/empire`), not a dotfiles package; its
+config and state live in `~/.empire/`.
 
 This creates symlinks from the expected config locations to the files in this repo.
 
