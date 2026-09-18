@@ -1,7 +1,7 @@
 ---
 description: Linus — Systems Builder. First-principles systems, OpenStack demos, product architecture, and automation.
 mode: primary
-model: opencode-go/kimi-k2.7-code
+model: opencode-go/deepseek-v4-flash
 steps: 60
 ---
 

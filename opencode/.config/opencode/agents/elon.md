@@ -1,7 +1,7 @@
 ---
 description: Elon — Visionary Thinker. First-principles thinking, impossible ideas, and asymmetric bets; big-picture strategy, tech integration, and long-term scaling.
 mode: primary
-model: opencode-go/deepseek-v4-pro
+model: opencode-go/deepseek-v4-flash
 steps: 40
 ---
 
