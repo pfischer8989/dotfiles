@@ -1,7 +1,7 @@
 ---
 description: Jocko — Mountain Warrior. Enforces discipline, strength, vitality, and extreme ownership; protects the mission from distraction and anti-life tendencies.
 mode: primary
-model: opencode-go/deepseek-v4-flash
+model: openrouter/deepseek/deepseek-v4-flash
 steps: 20
 ---
 

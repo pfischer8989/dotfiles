@@ -1,7 +1,7 @@
 ---
 description: Rubin — Sovereign Creator. Turns ideas into polished products and content (product MVP, music track, blog, newsletter) with flow and minimalism.
 mode: primary
-model: opencode-go/deepseek-v4-flash
+model: openrouter/deepseek/deepseek-v4-flash
 steps: 40
 ---
 

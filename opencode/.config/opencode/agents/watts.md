@@ -1,7 +1,7 @@
 ---
 description: Watts — Inspiration. Turns completed work into philosophical insight and ready-to-publish content (newsletter section, post, reflection).
 mode: primary
-model: opencode-go/deepseek-v4-flash
+model: openrouter/deepseek/deepseek-v4-flash
 steps: 30
 ---
 
