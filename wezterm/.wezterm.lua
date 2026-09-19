@@ -24,6 +24,49 @@ config.window_frame = {
 }
 
 
+-- Copy on mouse selection.
+-- Releasing the left mouse button puts the selection straight into the system
+-- clipboard (and the primary selection, so middle-click paste keeps working).
+-- This matches the upstream default, but being explicit makes the intent clear
+-- and protects against a future release changing the default.
+config.mouse_bindings = {
+  -- Single click / click-drag selection.
+  -- CompleteSelectionOrOpenLinkAtMouseCursor copies the selection, but still
+  -- opens a link if you click one. Swap it for CompleteSelection(...) below if
+  -- you would rather always copy and never open a link.
+  {
+    event = { Up = { streak = 1, button = "Left" } },
+    mods = "NONE",
+    action = wezterm.action.CompleteSelectionOrOpenLinkAtMouseCursor("ClipboardAndPrimarySelection"),
+  },
+  -- Double click selects a word.
+  {
+    event = { Up = { streak = 2, button = "Left" } },
+    mods = "NONE",
+    action = wezterm.action.CompleteSelection("ClipboardAndPrimarySelection"),
+  },
+  -- Triple click selects a line.
+  {
+    event = { Up = { streak = 3, button = "Left" } },
+    mods = "NONE",
+    action = wezterm.action.CompleteSelection("ClipboardAndPrimarySelection"),
+  },
+  -- Middle click pastes. We paste from the system clipboard rather than the
+  -- X11 primary selection, so it pastes whatever was last copied with
+  -- Ctrl+C / Ctrl+Shift+C anywhere. Shift+middle works even when a TUI has
+  -- grabbed the mouse (same trick as Shift+drag to select).
+  {
+    event = { Down = { streak = 1, button = "Middle" } },
+    mods = "NONE",
+    action = wezterm.action.PasteFrom("Clipboard"),
+  },
+  {
+    event = { Down = { streak = 1, button = "Middle" } },
+    mods = "SHIFT",
+    action = wezterm.action.PasteFrom("Clipboard"),
+  },
+}
+
 -- Dim unfocused windows so the focused one is obvious at a glance.
 local UNFOCUSED_FOREGROUND_TEXT_HSB = { hue = 1.0, saturation = 0.25, brightness = 0.45 }
 local UNFOCUSED_WINDOW_BACKGROUND_OPACITY = 0.62
