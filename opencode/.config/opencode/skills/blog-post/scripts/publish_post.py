@@ -109,6 +109,15 @@ def main(argv=None):
             fail(f"git pull failed: {r.stderr.strip()}")
         subjects = json.loads(subjects_file.read_text(encoding="utf-8"))
 
+    # Idempotent: a retried publish must not post the same article twice.
+    for p in posts.glob("*.md"):
+        head = p.read_text(encoding="utf-8").split("\n---", 1)[0]
+        m = re.search(r"^title:\s*(.+)$", head, re.M)
+        if m and m.group(1).strip().strip("'\"") == a.title.strip() and "conflicted copy" not in p.name:
+            pid = p.name.split("_", 1)[0]
+            print(f"already published: {p.relative_to(repo)}\nurl:     https://{a.site}/post/{pid}/")
+            return 0
+
     ids = [int(m.group(1)) for p in posts.glob("*.md")
            if "conflicted copy" not in p.name and (m := re.match(r"(\d+)_", p.name))]
     post_id = max(ids, default=0) + 1
