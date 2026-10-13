@@ -5,9 +5,11 @@ description: Use when publishing a finished article to one of Paul's blogs (pfis
 
 # Publish a blog post
 
-The blogs are static Next.js sites. Each lives in its own git repo under
-`~/Dropbox/Development/Personal/websites/blogs/<site>`. Pushing to `main` is
-publishing: the VPS checks GitHub every 5 minutes and rebuilds the site.
+The blogs are static Next.js sites, each in its own git repo: under
+`$BLOG_REPOS/<site>` when that is set (Hoth: `~/blogs`, plain clones outside
+Dropbox), else `~/Dropbox/Development/Personal/websites/blogs/<site>`. The
+script finds the right one; don't open the other location. Pushing to `main`
+is publishing: the VPS checks GitHub every 5 minutes and rebuilds the site.
 
 ## Sites
 
