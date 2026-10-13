@@ -93,6 +93,10 @@ def main(argv=None):
         names = ", ".join(f"{k}={v.get('name')}" for k, v in subjects.items())
         fail(f"subject {a.subject} not in subjects.json ({names})")
 
+    # Safety: Dropbox conflict copies inside .git break fetch with cryptic errors.
+    junk = [str(p.relative_to(repo)) for p in (repo / ".git").rglob("*conflicted copy*")]
+    if junk:
+        fail("Dropbox conflict copies inside .git; move them out first:\n  " + "\n  ".join(junk))
     # Safety: start from a clean, current main.
     status = git(repo, "status", "--porcelain", "--untracked-files=no").stdout.strip()
     if status:
