@@ -1,5 +1,7 @@
 """Tests for uhe.py with small synthetic presets (python3 test_uhe.py)."""
+import io
 import json
+from contextlib import redirect_stdout
 import sys
 import tempfile
 import unittest
@@ -68,14 +70,16 @@ class UheCase(unittest.TestCase):
         base.update(item)
         return {"synth": "Diva", "pack": "Test Pack", "presets": [base]}
 
-    def test_parse_and_round_trip_without_binary(self):
+    def test_parse_and_round_trip_keeps_binary(self):
         p = uhe.Preset.load(uhe.FACTORY / "Diva/1 BASS/Fat Bass.h2p")
         self.assertEqual(p.synth, "Diva")
         self.assertEqual(p.get("VCF1.Freq"), "60.00")
         self.assertEqual(p.meta["Categories"], "Bass:Analogue")
         out = p.text()
-        self.assertNotIn("DON'T TOUCH", out)
-        self.assertEqual(uhe.Preset(out).params(), p.params())
+        self.assertTrue(out.endswith("$$$$1920\nabcDEF=96829\n"))
+        again = uhe.Preset(out)
+        self.assertEqual(again.params(), p.params())
+        self.assertEqual(again.text(), out)
 
     def test_catalog_ranges_and_categories(self):
         c = uhe.build_catalog("Diva")
@@ -97,7 +101,7 @@ class UheCase(unittest.TestCase):
         self.assertIn("#FX1=0\n", path.read_text(encoding="latin-1"))
         self.assertEqual(p.meta["Bank"], "Empire Test Pack")
         self.assertEqual(p.meta["Author"], "Empire")
-        self.assertNotIn("$$$$", path.read_text(encoding="latin-1"))
+        self.assertIn("$$$$1920", path.read_text(encoding="latin-1"))
         self.assertIn("VCF1.Freq: 120.00 -> 70.50", written[0][1])
 
     def test_bad_presets_write_nothing(self):
@@ -129,6 +133,88 @@ class UheCase(unittest.TestCase):
         self.assertEqual(uhe.main(["pack", str(spec), "--dry-run"]), 0)
         self.assertFalse((uhe.USER / "Diva/Empire").exists())
         self.assertEqual(uhe.main(["typical", "Diva", "--category", "Bass"]), 0)
+
+
+ZEBRA = """/*@Meta
+
+Categories:
+'{cat}'
+
+*/
+
+#AM=Zebra3
+#ms=none
+#ms=ModWhl
+#ms=LFO 1
+#cm=Grid
+Grid=82
+#cm=MM1
+Source={src}
+Via=0
+Dest1='Filter1:Cut'
+Depth1=50.00
+#cm=Osc1
+PSrc=0
+Source=1
+#cm=Filter1
+Coord=173
+Cut={cut}
+"""
+
+
+class ZebraCase(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        root = Path(self.tmp.name)
+        uhe.FACTORY, uhe.USER, uhe.CATALOGS = root / "f", root / "u", root / "c"
+        uhe.MANUALS = root / "m"
+        d = uhe.FACTORY / "Zebra3" / "01 Atmospheres"
+        d.mkdir(parents=True)
+        for name, src, cut in (("Fog", 2, "40.00"), ("Mist", 1, "90.00")):
+            (d / f"{name}.h2p").write_text(ZEBRA.format(cat="Atmosphere:Dark", src=src, cut=cut),
+                                           encoding="latin-1")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def pack(self, changes):
+        return uhe.write_pack({"synth": "Zebra3", "pack": "Z", "presets": [
+            {"name": "Z1", "from": "Fog", "categories": ["Atmosphere:Dark"], "set": changes}]},
+            dry_run=True)
+
+    def test_matrix_sources_by_name_and_targets(self):
+        changes = self.pack({"MM1.Source": "ModWhl", "MM1.Dest1": "Filter1:Cut", "Filter1.Cut": 60})[0][1]
+        self.assertIn("MM1.Source: 2 -> 1", changes)
+        self.assertIn("MM1.Via: 0 -> 2", self.pack({"MM1.Via": 2})[0][1])   # no factory preset uses it
+        for bad in ({"MM1.Source": "LFO 9"}, {"MM1.Source": 3}, {"MM1.Dest1": "Filter9:Cut"}):
+            with self.subTest(bad=bad), self.assertRaises(uhe.UheError):
+                self.pack(bad)
+
+    def test_pointers_into_binary_are_protected(self):
+        for key in ("Grid.Grid", "Filter1.Coord"):
+            with self.subTest(key=key), self.assertRaisesRegex(uhe.UheError, "binary"):
+                self.pack({key: 82})
+
+    def test_labels(self):
+        src = ["none", "ModWhl", "LFO 1"]
+        self.assertEqual(uhe.label("MM1.Source", "2", src), "2 (LFO 1)")
+        self.assertEqual(uhe.label("Osc1.PSrc", "1", src), "1 (ModWhl)")
+        self.assertEqual(uhe.label("Osc1.Source", "1", src), "1")
+
+    def test_manual_sections(self):
+        uhe.MANUALS.mkdir()
+        (uhe.MANUALS / "Zebra3.txt").write_text(
+            "=== page 1 ===\nContents\nFilter \ufffc 2\nFilter Palette \ufffc ......3\n"
+            "Comb \ufffc 4\n=== page 2 ===\nFilter\nCut is cutoff.\n"
+            "=== page 3 ===\nFilter Palette\nLP Xcite\n=== page 4 ===\nComb\nDamp\n", encoding="utf-8")
+        toc = uhe.manual_toc(uhe.manual_pages("Zebra3"))
+        self.assertEqual(toc, [("Filter", 2, True), ("Filter Palette", 3, False), ("Comb", 4, True)])
+        out = io.StringIO()
+        with redirect_stdout(out):
+            self.assertEqual(uhe.main(["manual", "Zebra3", "filter"]), 0)
+        self.assertIn("p.2-3", out.getvalue())
+        self.assertIn("LP Xcite", out.getvalue())
+        self.assertNotIn("Damp", out.getvalue())
 
 
 if __name__ == "__main__":

@@ -8,11 +8,14 @@
     uhe.py params Diva --module ENV1         every parameter with its factory range
     uhe.py typical Diva --category Bass:Analogue
     uhe.py pack spec.json                    write a pack of presets (see SKILL.md)
+    uhe.py manual Zebra3 filter              the manual's section on a topic
 
 A preset is text: a /*@Meta ... */ header (bank, author, categories, ...),
 then parameters grouped by module (`#cm=VCF1` then `Freq=150.00` lines), then
-a binary block that duplicates them. The synth loads the text values (tested
-with Diva), so presets written here drop the binary block.
+a binary block. The synths load the text values over the binary block (tested
+with Diva and Zebra 3), but the block also holds what the text can't (Zebra's
+grid routing, wavetables and MSEG curves), so presets written here keep their
+base preset's block, and parameters that point into it are never changed.
 
 Python 3.9+ standard library only (it runs on the Macs' /usr/bin/python3).
 """
@@ -30,6 +33,7 @@ from typing import Dict, List, Optional
 FACTORY = Path(os.environ.get("UHE_FACTORY_PRESETS", "/Library/Audio/Presets/u-he"))
 USER = Path(os.environ.get("UHE_USER_PRESETS", Path.home() / "Library/Audio/Presets/u-he"))
 CATALOGS = Path(os.environ.get("UHE_CATALOG_DIR", Path.home() / ".empire/uhe"))
+MANUALS = Path(os.environ.get("UHE_MANUALS", Path.home() / ".empire/manuals"))
 OUR_FOLDER = "Empire"           # everything we write goes under <user>/<Synth>/Empire/
 BINARY_MARK = "// Section for ugly compressed binary Data"
 META_RE = re.compile(r"/\*@Meta\n(.*?)\*/\n*", re.S)
@@ -37,7 +41,15 @@ FIELD_RE = re.compile(r"^(\w[\w ]*):\n'(.*?)'\n", re.S | re.M)
 META_ORDER = ["Bank", "Author", "Usage", "Description", "Categories", "Features", "Character"]
 # Internal bookkeeping (version, per-voice drift tables, scope): left out of `typical`.
 NOISE_MODULES = {"main", "PCore", "OPT", "Scope1"}
-SOURCE_RE = re.compile(r"(Src\d*|[DF]MS\d)$")   # parameters that pick a modulation source
+SOURCE_RE = re.compile(r"(Src\d*|[DF]MS\d)$|^MM\d+\.(Source|Via)$")   # picks a mod source
+DEST_RE = re.compile(r"^MM\d+\.Dest\d+$")          # Zebra matrix target, e.g. 'Filter1:Cut'
+# Parameters that point into the binary block (grid routing, curves, module
+# files) or hold host/UI state: changing them breaks the preset.
+PROTECTED = {
+    "Zebra3": re.compile(r"^(Grid|FXGrid|MPreset|Scope|main|PCore|MGraph|MPE|LayMem|MIDI)\."
+                         r"|^[OM]\dGeo\d\.|\.Coord$|^Modal\d\.MDFile|^MMap\d\.Stps$"
+                         r"|^Noise\d\.KVsc$|^Tune\.MTun[NT]$"),
+}
 FLAG_RE = re.compile(r"#(FX\d)=")                # effect slot on/off, written with a leading #
 
 
@@ -57,8 +69,9 @@ class Preset:
             self.meta = {k: v for k, v in FIELD_RE.findall(m.group(1))}
             body = body[m.end():]
         cut = body.find(BINARY_MARK)
+        self.binary = ""
         if cut != -1:
-            body = body[:cut]
+            body, self.binary = body[:cut], body[cut:]
         self.lines = body.rstrip("\n").split("\n")
         self.index: Dict[str, int] = {}
         self.flags = set()                               # keys written as `#Name=`
@@ -115,7 +128,8 @@ class Preset:
         for k in keys:
             value = self.meta[k].replace("'", "’").replace("\n", "\\r\\n")
             head += f"{k}:\n'{value}'\n\n"
-        return head + "*/\n\n" + "\n".join(self.lines) + "\n"
+        out = head + "*/\n\n" + "\n".join(self.lines) + "\n"
+        return out + "\n\n\n" + self.binary if self.binary else out
 
 
 def format_value(old: str, value) -> str:
@@ -278,9 +292,24 @@ def cmd_find(a):
     print(f"({len(rows)} match{'es' if len(rows) != 1 else ''})", file=sys.stderr)
 
 
+def protected(synth: str, key: str) -> bool:
+    rule = PROTECTED.get(synth)
+    return bool(rule and rule.search(key))
+
+
+def source_index(value, sources: List[str]):
+    """A modulation source by name ("LFO 1") -> its number; numbers pass through."""
+    if isinstance(value, str) and number(value) is None:
+        names = [s.lower() for s in sources]
+        if value.strip().lower() not in names:
+            raise UheError(f"no modulation source {value!r} (sources: {', '.join(sources)})")
+        return names.index(value.strip().lower())
+    return value
+
+
 def label(key: str, value, sources: List[str]) -> str:
     """`15` -> `15 (Env2)` for a modulation-source parameter."""
-    if SOURCE_RE.search(key.split(".", 1)[-1]):
+    if SOURCE_RE.search(key):
         try:
             return f"{value} ({sources[int(value)]})"
         except (ValueError, IndexError):
@@ -336,7 +365,7 @@ def cmd_typical(a):
     rows = []
     src = c.get("sources") or []
     for k, v in cat["params"].items():
-        if k.split(".", 1)[0] in NOISE_MODULES:
+        if k.split(".", 1)[0] in NOISE_MODULES or protected(a.synth, k):
             continue
         s = c["params"][k]
         if s["type"] == "number":
@@ -358,6 +387,11 @@ def centre_from_stats(s: dict):
 def check_value(stats: dict, key: str, value: str) -> Optional[str]:
     s = stats.get(key)
     if not s:
+        return None
+    if DEST_RE.match(key):
+        target = value.strip("'").replace(":", ".", 1)
+        if target not in stats and value not in s["values"]:
+            return f"{key}={value}: no parameter {target} to modulate (write 'Module:Param')"
         return None
     if s["type"] == "number":
         n = float(value)
@@ -407,9 +441,18 @@ def write_pack(spec: dict, dry_run=False, overwrite=False, out_dir: Optional[Pat
                 raise UheError(f"{item.get('from')} is a {base.synth} preset, not {synth}")
             changes = []
             for key, value in (item.get("set") or {}).items():
+                if protected(synth, key):
+                    raise UheError(f"{key} points into the preset's binary data "
+                                   "(routing, curves, files); uhe.py never changes it")
                 old = base.get(key)
+                if SOURCE_RE.search(key):
+                    value = source_index(value, base.sources)
                 new = base.set(key, value)
-                issue = check_value(catalog["params"], key, new)
+                if SOURCE_RE.search(key) and base.sources:
+                    issue = None if 0 <= int(new) < len(base.sources) else \
+                        f"{key}={new}: {synth} has sources 0..{len(base.sources) - 1}"
+                else:
+                    issue = check_value(catalog["params"], key, new)
                 if issue:
                     raise UheError(issue)
                 if new != old:
@@ -442,6 +485,86 @@ def write_pack(spec: dict, dry_run=False, overwrite=False, out_dir: Optional[Pat
     return [(path, changes) for path, _, changes in plans]
 
 
+# -- manuals -----------------------------------------------------------------
+# A manual is the PDF's text with `=== page N ===` lines (see `manual --pdf`).
+# Its table of contents gives each section's first page.
+
+TOC_RE = re.compile(r"^(.+?)\s*\ufffc\s*(\.*)\s*(\d+)$")
+JXA = """ObjC.import("PDFKit");
+function run(argv) {
+  var d = $.PDFDocument.alloc.initWithURL($.NSURL.fileURLWithPath(argv[0])), out = [];
+  for (var i = 0; i < d.pageCount; i++)
+    out.push("=== page " + (i + 1) + " ===\\n" + ObjC.unwrap(d.pageAtIndex(i).string));
+  return out.join("\\n");
+}"""
+
+
+def manual_pages(synth: str) -> Dict[int, str]:
+    path = MANUALS / f"{synth}.txt"
+    if not path.is_file():
+        raise UheError(f"no manual text at {path}; make it with: "
+                       f"uhe.py manual {synth} --pdf '<the synth's user guide>.pdf'")
+    parts = re.split(r"^=== page (\d+) ===\n", path.read_text(encoding="utf-8"), flags=re.M)
+    return {int(n): text for n, text in zip(parts[1::2], parts[2::2])}
+
+
+def manual_toc(pages: Dict[int, str]) -> List[tuple]:
+    """[(title, page, top_level)] in order; top-level entries have no dot leaders."""
+    toc = []
+    for n in sorted(pages)[:8]:
+        for line in pages[n].split("\n"):
+            m = TOC_RE.match(line.strip())
+            if m and m.group(1).strip():
+                toc.append((m.group(1).strip(), int(m.group(3)), not m.group(2)))
+    return toc
+
+
+def section_end(toc: List[tuple], i: int) -> int:
+    """Last page of toc[i]: up to the next chapter, or the next entry's page for a section."""
+    title, start, top = toc[i]
+    later = [p for _, p, tl in toc[i + 1:] if tl or not top]
+    return max(start, (later[0] - 1 if top else later[0]) if later else start)
+
+
+def cmd_manual(a):
+    MANUALS.mkdir(parents=True, exist_ok=True)
+    if a.pdf:
+        import subprocess
+        out = subprocess.run(["osascript", "-l", "JavaScript", "-e", JXA, str(Path(a.pdf).expanduser())],
+                             capture_output=True, text=True)
+        if out.returncode:
+            raise UheError(f"could not read {a.pdf}: {out.stderr.strip()}")
+        (MANUALS / f"{a.synth}.txt").write_text(out.stdout, encoding="utf-8")
+    pages = manual_pages(a.synth)
+    toc = manual_toc(pages)
+    if a.grep:
+        for n in sorted(pages):
+            for line in pages[n].split("\n"):
+                if a.grep.lower() in line.lower() and not TOC_RE.match(line.strip()):
+                    print(f"p.{n}: {line.strip()}")
+        return
+    if not a.topic:
+        for title, page, top in toc:
+            print(f"{'' if top else '    '}{title}  p.{page}")
+        return
+    want = " ".join(a.topic).lower()
+    hits = [i for i, (t, _, _) in enumerate(toc) if want in t.lower()]
+    if not hits:
+        raise UheError(f"no section matching {want!r}; `uhe.py manual {a.synth}` lists them, "
+                       f"or search the text with --grep")
+    # A whole chapter first, then an exact title, then the longest section (the Editor Bar's
+    # one-line "MSEG" entry loses to the MSEG section itself).
+    hits.sort(key=lambda i: (not toc[i][2], toc[i][0].lower() != want, toc[i][1] - section_end(toc, i), i))
+    i = hits[0]
+    title, start, _ = toc[i]
+    end = min(section_end(toc, i), start + a.max_pages - 1)
+    print(f"# {title} (manual p.{start}-{end})")
+    if len(hits) > 1:
+        print("also: " + "; ".join(f"{toc[j][0]} p.{toc[j][1]}" for j in hits[1:8]))
+    for n in range(start, end + 1):
+        print(f"\n--- p.{n} ---\n{pages.get(n, '').strip()}")
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -460,6 +583,9 @@ def main(argv=None) -> int:
     s = sub.add_parser("pack"); s.add_argument("spec"); s.add_argument("--dry-run", action="store_true")
     s.add_argument("--overwrite", action="store_true"); s.add_argument("--out-dir")
     s.set_defaults(fn=cmd_pack)
+    s = sub.add_parser("manual"); s.add_argument("synth"); s.add_argument("topic", nargs="*")
+    s.add_argument("--grep"); s.add_argument("--pdf"); s.add_argument("--max-pages", type=int, default=6)
+    s.set_defaults(fn=cmd_manual)
     a = ap.parse_args(argv)
     try:
         a.fn(a)
