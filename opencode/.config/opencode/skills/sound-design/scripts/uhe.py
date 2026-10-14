@@ -41,7 +41,12 @@ FIELD_RE = re.compile(r"^(\w[\w ]*):\n'(.*?)'\n", re.S | re.M)
 META_ORDER = ["Bank", "Author", "Usage", "Description", "Categories", "Features", "Character"]
 # Internal bookkeeping (version, per-voice drift tables, scope): left out of `typical`.
 NOISE_MODULES = {"main", "PCore", "OPT", "Scope1"}
-SOURCE_RE = re.compile(r"(Src\d*|[DF]MS\d)$|^MM\d+\.(Source|Via)$")   # picks a mod source
+SOURCE_RE = re.compile(r"(Src\d*|[DF]MS\d)$|^MM\d+\.(Source|Via)$"    # picks a mod source
+                       r"|^(Filter\d+\.FS\d|Osc\dFX\d\.(Source|Trigger)|Noise\d\.(VolSc|Trigger)"
+                       r"|Modal\d\.TuneSc|TxVb\.(Trigger|GrnTrig)|Excitr\d\.(Trigger|VolMS))$")
+# Named like sources but using another list (5 = CtrlC on nearly every Zebra
+# preset's amp can't be right) or display state: never labelled.
+NOT_SOURCE_RE = re.compile(r"^GridAmp\.Amp\dSrc$|\.PlotSrc$")
 DEST_RE = re.compile(r"^MM\d+\.Dest\d+$")          # Zebra matrix target, e.g. Filter1:Cut
 # Parameters that point into the binary block (grid routing, curves, module
 # files) or hold host/UI state: changing them breaks the preset.
@@ -310,7 +315,7 @@ def source_index(value, sources: List[str]):
 
 def label(key: str, value, sources: List[str]) -> str:
     """`15` -> `15 (Env2)` for a modulation-source parameter."""
-    if SOURCE_RE.search(key):
+    if SOURCE_RE.search(key) and not NOT_SOURCE_RE.search(key):
         try:
             return f"{value} ({sources[int(value)]})"
         except (ValueError, IndexError):
@@ -446,12 +451,13 @@ def write_pack(spec: dict, dry_run=False, overwrite=False, out_dir: Optional[Pat
                     raise UheError(f"{key} points into the preset's binary data "
                                    "(routing, curves, files); uhe.py never changes it")
                 old = base.get(key)
-                if SOURCE_RE.search(key):
+                is_source = SOURCE_RE.search(key) and not NOT_SOURCE_RE.search(key)
+                if is_source:
                     value = source_index(value, base.sources)
                 if DEST_RE.match(key):
                     value = str(value).strip("'").replace(".", ":", 1)
                 new = base.set(key, value)
-                if SOURCE_RE.search(key) and base.sources:
+                if is_source and base.sources:
                     issue = None if 0 <= int(new) < len(base.sources) else \
                         f"{key}={new}: {synth} has sources 0..{len(base.sources) - 1}"
                 else:
@@ -522,11 +528,11 @@ def manual_toc(pages: Dict[int, str]) -> List[tuple]:
     return toc
 
 
-def section_end(toc: List[tuple], i: int) -> int:
+def section_end(toc: List[tuple], i: int, last: int) -> int:
     """Last page of toc[i]: up to the next chapter, or the next entry's page for a section."""
     title, start, top = toc[i]
     later = [p for _, p, tl in toc[i + 1:] if tl or not top]
-    return max(start, (later[0] - 1 if top else later[0]) if later else start)
+    return max(start, (later[0] - 1 if top else later[0]) if later else last)
 
 
 def cmd_manual(a):
@@ -557,10 +563,10 @@ def cmd_manual(a):
                        f"or search the text with --grep")
     # A whole chapter first, then an exact title, then the longest section (the Editor Bar's
     # one-line "MSEG" entry loses to the MSEG section itself).
-    hits.sort(key=lambda i: (not toc[i][2], toc[i][0].lower() != want, toc[i][1] - section_end(toc, i), i))
+    hits.sort(key=lambda i: (not toc[i][2], toc[i][0].lower() != want, toc[i][1] - section_end(toc, i, max(pages)), i))
     i = hits[0]
     title, start, _ = toc[i]
-    end = min(section_end(toc, i), start + a.max_pages - 1)
+    end = min(section_end(toc, i, max(pages)), start + a.max_pages - 1)
     print(f"# {title} (manual p.{start}-{end})")
     if len(hits) > 1:
         print("also: " + "; ".join(f"{toc[j][0]} p.{toc[j][1]}" for j in hits[1:8]))

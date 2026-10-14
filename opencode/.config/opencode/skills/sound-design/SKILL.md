@@ -1,15 +1,19 @@
 ---
 name: sound-design
-description: Use when designing synth sounds or a preset pack for Paul's u-he synths (Diva first) on Romulus. Starts from the closest factory presets, writes new presets as intentional variations with uhe.py, and saves them where the synth's preset browser shows them (User > Empire > <pack>).
+description: Use when designing synth sounds or a preset pack for Paul's u-he synths (Diva, Zebra 3) on Romulus. Starts from the closest factory presets, writes new presets as intentional variations with uhe.py, and saves them where the synth's preset browser shows them (User > Empire > <pack>).
 ---
 
 # Sound design for u-he synths
 
-u-he presets (`.h2p`) are text files: a metadata header, then every
-parameter by module and name. `scripts/uhe.py` searches the factory library,
-shows and compares presets, and writes new ones; it validates every value
-against the factory presets' ranges and writes a whole pack or nothing.
-Synth guides: `references/diva.md` (read it before designing for Diva).
+u-he presets (`.h2p`) are text files: a metadata header, every parameter by
+module and name, then a binary block (routing, wavetables, curves).
+`scripts/uhe.py` searches the factory library, shows and compares presets,
+and writes new ones: it changes text values, keeps the base preset's binary
+block, refuses parameters that point into it, validates every value against
+the factory presets' ranges, and writes a whole pack or nothing.
+
+Synth guides (read the one for your synth before designing):
+`references/diva.md`, `references/zebra3.md` (catalog name `Zebra3`).
 
 Run the script with `python3` (path: this skill's `scripts/uhe.py`). The
 catalog of a synth builds itself the first time (under a second).
@@ -21,7 +25,14 @@ uhe.py show "HS Bass Nine" --synth Diva --module VCF1
 uhe.py diff "INIT Minipoly" "HS Bass Nine" --synth Diva
 uhe.py params Diva --module ENV1                 # ranges and common values
 uhe.py pack spec.json --dry-run                  # validate, then without --dry-run to write
+uhe.py manual Zebra3 modal resonator             # the user guide's section on a topic
+uhe.py manual Zebra3 --grep detune               # every line that mentions a word, with pages
+uhe.py manual Zebra3                             # its table of contents
 ```
+
+`manual` reads `~/.empire/manuals/<Synth>.txt` (made once from the PDF with
+`uhe.py manual <Synth> --pdf <guide.pdf>`). Look up a module before you
+change it: the guide explains what each parameter does musically.
 
 ## Steps
 
@@ -63,7 +74,8 @@ uhe.py pack spec.json --dry-run                  # validate, then without --dry-
    `from` is a preset name or `folder/name` as `find` prints it (or a file
    path). `categories` must be ones the synth already uses (`typical` lists
    them on a typo). `set` keys are `MODULE.Param` exactly as `show` prints
-   them. Name presets with a short shared prefix for the pack.
+   them. Name presets with a short shared prefix for the pack. Modulation
+   sources can be given by name (`"MM3.Source": "LFO 2"`).
 5. **Validate, then write**: `uhe.py pack spec.json --dry-run`; fix every
    error it reports (nothing is written while any preset is invalid); then
    run it without `--dry-run`. Presets land in
@@ -83,6 +95,8 @@ uhe.py pack spec.json --dry-run                  # validate, then without --dry-
   brief says to replace them.
 - Don't invent parameters or categories; if `uhe.py` rejects a value, fix
   the design rather than forcing it.
+- On a modular synth (Zebra 3) only change modules the base preset actually
+  uses (the guide says how to tell); an edit to an unused module is silent.
 - You can't hear the result. Say so where it matters ("the resonance may be
   sharp at high notes; check C5 and up") instead of overclaiming. Never
   state measurements you can't make: no dB levels, milliseconds or Hz

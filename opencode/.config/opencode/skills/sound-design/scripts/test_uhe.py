@@ -201,6 +201,8 @@ class ZebraCase(unittest.TestCase):
         self.assertEqual(uhe.label("MM1.Source", "2", src), "2 (LFO 1)")
         self.assertEqual(uhe.label("Osc1.PSrc", "1", src), "1 (ModWhl)")
         self.assertEqual(uhe.label("Osc1.Source", "1", src), "1")
+        self.assertEqual(uhe.label("Filter1.FS1", "2", src), "2 (LFO 1)")
+        self.assertEqual(uhe.label("GridAmp.Amp1Src", "2", src), "2")
 
     def test_manual_sections(self):
         uhe.MANUALS.mkdir()
