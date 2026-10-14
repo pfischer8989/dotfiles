@@ -84,4 +84,8 @@ uhe.py pack spec.json --dry-run                  # validate, then without --dry-
 - Don't invent parameters or categories; if `uhe.py` rejects a value, fix
   the design rather than forcing it.
 - You can't hear the result. Say so where it matters ("the resonance may be
-  sharp at high notes; check C5 and up") instead of overclaiming.
+  sharp at high notes; check C5 and up") instead of overclaiming. Never
+  state measurements you can't make: no dB levels, milliseconds or Hz
+  derived from parameter values ("VCA1.Vol 42-46, close to each other" is
+  fine; "matched within 2 dB" is not). Only describe a change you actually
+  made (don't call a preset "detuned" unless it is, or say it was already).
