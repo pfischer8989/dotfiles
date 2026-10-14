@@ -35,6 +35,9 @@ BINARY_MARK = "// Section for ugly compressed binary Data"
 META_RE = re.compile(r"/\*@Meta\n(.*?)\*/\n*", re.S)
 FIELD_RE = re.compile(r"^(\w[\w ]*):\n'(.*?)'\n", re.S | re.M)
 META_ORDER = ["Bank", "Author", "Usage", "Description", "Categories", "Features", "Character"]
+# Internal bookkeeping (version, per-voice drift tables, scope): left out of `typical`.
+NOISE_MODULES = {"main", "PCore", "OPT", "Scope1"}
+SOURCE_RE = re.compile(r"Src\d*$")              # parameters that pick a modulation source
 
 
 class UheError(Exception):
@@ -57,6 +60,8 @@ class Preset:
             body = body[:cut]
         self.lines = body.rstrip("\n").split("\n")
         self.index: Dict[str, int] = {}
+        # The header lists the modulation sources; *Src parameters index into it.
+        self.sources = [line[4:] for line in self.lines if line.startswith("#ms=")]
         module = None
         for i, line in enumerate(self.lines):
             cm = re.match(r"#cm=(\S+)$", line)
@@ -141,7 +146,7 @@ def build_catalog(synth: str) -> dict:
     files = preset_files(synth)
     if not files:
         raise UheError(f"no {synth} presets under {FACTORY / synth} or {USER / synth}")
-    presets, values, by_cat = [], {}, {}
+    presets, values, by_cat, sources = [], {}, {}, []
     for source, path in files:
         try:
             p = Preset.load(path)
@@ -160,6 +165,7 @@ def build_catalog(synth: str) -> dict:
         })
         if source != "factory":
             continue                                   # ranges come from factory sounds only
+        sources = sources or p.sources
         params = p.params()
         groups = set(cats) | {c.split(":")[0] for c in cats}
         for k, v in params.items():
@@ -171,7 +177,8 @@ def build_catalog(synth: str) -> dict:
     for g, params in by_cat.items():
         count = len(next(iter(params.values())))
         categories[g] = {"count": count, "params": {k: centre(v) for k, v in params.items()}}
-    catalog = {"synth": synth, "presets": presets, "params": stats, "categories": categories}
+    catalog = {"synth": synth, "presets": presets, "params": stats, "categories": categories,
+               "sources": sources}
     CATALOGS.mkdir(parents=True, exist_ok=True)
     (CATALOGS / f"{synth}.json").write_text(json.dumps(catalog), encoding="utf-8")
     return catalog
@@ -262,6 +269,16 @@ def cmd_find(a):
     print(f"({len(rows)} match{'es' if len(rows) != 1 else ''})", file=sys.stderr)
 
 
+def label(key: str, value, sources: List[str]) -> str:
+    """`15` -> `15 (Env2)` for a modulation-source parameter."""
+    if SOURCE_RE.search(key.split(".", 1)[-1]):
+        try:
+            return f"{value} ({sources[int(value)]})"
+        except (ValueError, IndexError):
+            pass
+    return str(value)
+
+
 def cmd_show(a):
     p = Preset.load(resolve(a.preset, a.synth))
     for k in ("Bank", "Author", "Categories", "Features", "Character", "Description", "Usage"):
@@ -275,7 +292,7 @@ def cmd_show(a):
         if m != module:
             print(f"\n[{m}]")
             module = m
-        print(f"  {k.split('.', 1)[1]}={v}")
+        print(f"  {k.split('.', 1)[1]}={label(k, v, p.sources)}")
 
 
 def cmd_diff(a):
@@ -283,7 +300,7 @@ def cmd_diff(a):
     va, vb = pa.params(), pb.params()
     for k in va:
         if va[k] != vb.get(k):
-            print(f"{k:22} {va[k]:>10}  ->  {vb.get(k)}")
+            print(f"{k:22} {label(k, va[k], pa.sources):>14}  ->  {label(k, vb.get(k), pb.sources)}")
 
 
 def cmd_params(a):
@@ -295,7 +312,8 @@ def cmd_params(a):
             print(f"{k:22} {s['min']:g}..{s['max']:g}  (most presets {s['p10']:g}..{s['p90']:g}, "
                   f"median {s['median']:g})")
         else:
-            vals = ", ".join(f"{v} ({n})" for v, n in list(s["values"].items())[:8])
+            src = c.get("sources") or []
+            vals = ", ".join(f"{label(k, v, src)} x{n}" for v, n in list(s["values"].items())[:8])
             print(f"{k:22} {s['type']}: {vals}")
 
 
@@ -307,7 +325,10 @@ def cmd_typical(a):
         raise UheError(f"no category {a.category!r}; categories: {names}")
     allc = {k: centre_from_stats(s) for k, s in c["params"].items()}
     rows = []
+    src = c.get("sources") or []
     for k, v in cat["params"].items():
+        if k.split(".", 1)[0] in NOISE_MODULES:
+            continue
         s = c["params"][k]
         if s["type"] == "number":
             spread = (s["p90"] - s["p10"]) or (s["max"] - s["min"]) or 1
@@ -315,7 +336,7 @@ def cmd_typical(a):
             if score >= 0.15:
                 rows.append((score, f"{k:22} {v:>8g}   (all {a.synth}: {s['median']:g})"))
         elif str(v) != str(allc[k]):
-            rows.append((0.5, f"{k:22} {v:>8}   (all {a.synth}: {allc[k]})"))
+            rows.append((0.5, f"{k:22} {label(k, v, src):>8}   (all {a.synth}: {label(k, allc[k], src)})"))
     print(f"{a.category}: {cat['count']} factory presets. Where it differs from all {a.synth} presets:")
     for _, line in sorted(rows, key=lambda r: -r[0])[:a.limit]:
         print("  " + line)
