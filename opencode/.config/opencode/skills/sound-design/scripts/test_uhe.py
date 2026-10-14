@@ -133,6 +133,13 @@ class UheCase(unittest.TestCase):
         self.assertEqual(uhe.main(["pack", str(spec), "--dry-run"]), 0)
         self.assertFalse((uhe.USER / "Diva/Empire").exists())
         self.assertEqual(uhe.main(["typical", "Diva", "--category", "Bass"]), 0)
+        out = io.StringIO()
+        with redirect_stdout(out):
+            uhe.main(["show", "Fat Bass", "--synth", "Diva", "--module", "ENV1", "--module", "vcf1,FX1"])
+        self.assertIn("[ENV1]", out.getvalue())
+        self.assertIn("[VCF1]", out.getvalue())
+        self.assertIn("[FX1]", out.getvalue())
+        self.assertNotIn("[main]", out.getvalue())
 
 
 ZEBRA = """/*@Meta

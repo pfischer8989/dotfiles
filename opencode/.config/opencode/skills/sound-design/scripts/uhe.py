@@ -323,6 +323,11 @@ def label(key: str, value, sources: List[str]) -> str:
     return str(value)
 
 
+def modules(a) -> set:
+    """--module Env1 --module LFO1,LFO2 -> {"env1", "lfo1", "lfo2"}"""
+    return {m.strip().lower() for arg in a.module for m in arg.split(",") if m.strip()}
+
+
 def cmd_show(a):
     p = Preset.load(resolve(a.preset, a.synth))
     for k in ("Bank", "Author", "Categories", "Features", "Character", "Description", "Usage"):
@@ -331,7 +336,7 @@ def cmd_show(a):
     module = None
     for k, v in p.params().items():
         m = k.split(".", 1)[0]
-        if a.module and m.lower() != a.module.lower():
+        if a.module and m.lower() not in modules(a):
             continue
         if m != module:
             print(f"\n[{m}]")
@@ -350,7 +355,7 @@ def cmd_diff(a):
 def cmd_params(a):
     c = catalog_for(a.synth)
     for k, s in c["params"].items():
-        if a.module and k.split(".")[0].lower() != a.module.lower():
+        if a.module and k.split(".")[0].lower() not in modules(a):
             continue
         if s["type"] == "number":
             print(f"{k:22} {s['min']:g}..{s['max']:g}  (most presets {s['p10']:g}..{s['p90']:g}, "
@@ -582,10 +587,11 @@ def main(argv=None) -> int:
     s.add_argument("--category"); s.add_argument("--source", choices=["factory", "user", "empire"])
     s.add_argument("--limit", type=int, default=25); s.set_defaults(fn=cmd_find)
     s = sub.add_parser("show"); s.add_argument("preset"); s.add_argument("--synth", default="")
-    s.add_argument("--module"); s.set_defaults(fn=cmd_show)
+    s.add_argument("--module", action="append", help="repeat or comma-separate: --module Env1,LFO1")
+    s.set_defaults(fn=cmd_show)
     s = sub.add_parser("diff"); s.add_argument("a"); s.add_argument("b")
     s.add_argument("--synth", default=""); s.set_defaults(fn=cmd_diff)
-    s = sub.add_parser("params"); s.add_argument("synth"); s.add_argument("--module")
+    s = sub.add_parser("params"); s.add_argument("synth"); s.add_argument("--module", action="append")
     s.set_defaults(fn=cmd_params)
     s = sub.add_parser("typical"); s.add_argument("synth"); s.add_argument("--category", required=True)
     s.add_argument("--limit", type=int, default=30); s.set_defaults(fn=cmd_typical)
