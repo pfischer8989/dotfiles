@@ -23,6 +23,9 @@ Categories:
 
 #AM=Diva
 #Vers=10001
+#cm=main
+CcOp=50.00
+#FX1=0
 #cm=ENV1
 Atk={atk}
 Sus=50.00
@@ -61,7 +64,7 @@ class UheCase(unittest.TestCase):
     def spec(self, **item):
         base = {"name": "Dark Swell", "from": "Big Pad", "categories": ["Pads:Evolving"],
                 "character": "Dark", "description": "A slow, dark swell.",
-                "set": {"ENV1.Atk": 75, "VCF1.Freq": 70.5, "FX1.Module": "Plate1"}}
+                "set": {"ENV1.Atk": 75, "VCF1.Freq": 70.5, "FX1.Module": "Plate1", "main.FX1": 0}}
         base.update(item)
         return {"synth": "Diva", "pack": "Test Pack", "presets": [base]}
 
@@ -91,6 +94,7 @@ class UheCase(unittest.TestCase):
         self.assertEqual(p.get("ENV1.Atk"), "75.00")
         self.assertEqual(p.get("VCF1.Freq"), "70.50")
         self.assertEqual(p.get("FX1.Module"), "'Plate1'")
+        self.assertIn("#FX1=0\n", path.read_text(encoding="latin-1"))
         self.assertEqual(p.meta["Bank"], "Empire Test Pack")
         self.assertEqual(p.meta["Author"], "Empire")
         self.assertNotIn("$$$$", path.read_text(encoding="latin-1"))

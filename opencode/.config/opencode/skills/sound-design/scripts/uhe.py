@@ -37,7 +37,8 @@ FIELD_RE = re.compile(r"^(\w[\w ]*):\n'(.*?)'\n", re.S | re.M)
 META_ORDER = ["Bank", "Author", "Usage", "Description", "Categories", "Features", "Character"]
 # Internal bookkeeping (version, per-voice drift tables, scope): left out of `typical`.
 NOISE_MODULES = {"main", "PCore", "OPT", "Scope1"}
-SOURCE_RE = re.compile(r"Src\d*$")              # parameters that pick a modulation source
+SOURCE_RE = re.compile(r"(Src\d*|[DF]MS\d)$")   # parameters that pick a modulation source
+FLAG_RE = re.compile(r"#(FX\d)=")                # effect slot on/off, written with a leading #
 
 
 class UheError(Exception):
@@ -60,13 +61,18 @@ class Preset:
             body = body[:cut]
         self.lines = body.rstrip("\n").split("\n")
         self.index: Dict[str, int] = {}
+        self.flags = set()                               # keys written as `#Name=`
         # The header lists the modulation sources; *Src parameters index into it.
         self.sources = [line[4:] for line in self.lines if line.startswith("#ms=")]
         module = None
         for i, line in enumerate(self.lines):
             cm = re.match(r"#cm=(\S+)$", line)
+            fl = FLAG_RE.match(line)
             if cm:
                 module = cm.group(1)
+            elif module and fl:
+                self.index[f"{module}.{fl.group(1)}"] = i
+                self.flags.add(f"{module}.{fl.group(1)}")
             elif module and "=" in line and not line.startswith(("#", "/", "$")):
                 self.index[f"{module}.{line.split('=', 1)[0]}"] = i
 
@@ -88,6 +94,9 @@ class Preset:
     def params(self) -> Dict[str, str]:
         return {k: self.lines[i].split("=", 1)[1] for k, i in self.index.items()}
 
+    def raw_name(self, key: str) -> str:
+        return ("#" if key in self.flags else "") + key.split(".", 1)[1]
+
     def get(self, key: str) -> str:
         if key not in self.index:
             raise UheError(f"{self.synth} has no parameter {key}")
@@ -96,7 +105,7 @@ class Preset:
     def set(self, key: str, value) -> str:
         old = self.get(key)
         new = format_value(old, value)
-        self.lines[self.index[key]] = f"{key.split('.', 1)[1]}={new}"
+        self.lines[self.index[key]] = f"{self.raw_name(key)}={new}"
         return new
 
     def text(self) -> str:
