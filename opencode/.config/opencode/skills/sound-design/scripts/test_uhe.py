@@ -151,7 +151,7 @@ Grid=82
 #cm=MM1
 Source={src}
 Via=0
-Dest1='Filter1:Cut'
+Dest1=none:assigned
 Depth1=50.00
 #cm=Osc1
 PSrc=0
@@ -183,8 +183,9 @@ class ZebraCase(unittest.TestCase):
             dry_run=True)
 
     def test_matrix_sources_by_name_and_targets(self):
-        changes = self.pack({"MM1.Source": "ModWhl", "MM1.Dest1": "Filter1:Cut", "Filter1.Cut": 60})[0][1]
+        changes = self.pack({"MM1.Source": "ModWhl", "MM1.Dest1": "Filter1.Cut", "Filter1.Cut": 60})[0][1]
         self.assertIn("MM1.Source: 2 -> 1", changes)
+        self.assertIn("MM1.Dest1: none:assigned -> Filter1:Cut", changes)
         self.assertIn("MM1.Via: 0 -> 2", self.pack({"MM1.Via": 2})[0][1])   # no factory preset uses it
         for bad in ({"MM1.Source": "LFO 9"}, {"MM1.Source": 3}, {"MM1.Dest1": "Filter9:Cut"}):
             with self.subTest(bad=bad), self.assertRaises(uhe.UheError):

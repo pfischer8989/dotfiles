@@ -42,7 +42,7 @@ META_ORDER = ["Bank", "Author", "Usage", "Description", "Categories", "Features"
 # Internal bookkeeping (version, per-voice drift tables, scope): left out of `typical`.
 NOISE_MODULES = {"main", "PCore", "OPT", "Scope1"}
 SOURCE_RE = re.compile(r"(Src\d*|[DF]MS\d)$|^MM\d+\.(Source|Via)$")   # picks a mod source
-DEST_RE = re.compile(r"^MM\d+\.Dest\d+$")          # Zebra matrix target, e.g. 'Filter1:Cut'
+DEST_RE = re.compile(r"^MM\d+\.Dest\d+$")          # Zebra matrix target, e.g. Filter1:Cut
 # Parameters that point into the binary block (grid routing, curves, module
 # files) or hold host/UI state: changing them breaks the preset.
 PROTECTED = {
@@ -137,15 +137,16 @@ def format_value(old: str, value) -> str:
     text = str(value).strip()
     if old.startswith("'"):                           # string, e.g. FX1.Module='Plate1'
         return "'" + text.strip("'") + "'"
-    try:
-        number = float(text)
-    except ValueError:
+    if number(old) is None:                           # bare text, e.g. Zebra's Dest1=Filter1:Cut
+        return text
+    n = number(text)
+    if n is None:
         raise UheError(f"expected a number, got {text!r}")
     if "." in old:
-        return f"{number:.2f}"
-    if number != int(number):
+        return f"{n:.2f}"
+    if n != int(n):
         raise UheError(f"expected a whole number, got {text!r}")
-    return str(int(number))
+    return str(int(n))
 
 
 def number(value: str) -> Optional[float]:
@@ -389,9 +390,9 @@ def check_value(stats: dict, key: str, value: str) -> Optional[str]:
     if not s:
         return None
     if DEST_RE.match(key):
-        target = value.strip("'").replace(":", ".", 1)
+        target = value.replace(":", ".", 1)
         if target not in stats and value not in s["values"]:
-            return f"{key}={value}: no parameter {target} to modulate (write 'Module:Param')"
+            return f"{key}={value}: no parameter {target} to modulate (e.g. Filter1:Cut, or none:assigned)"
         return None
     if s["type"] == "number":
         n = float(value)
@@ -447,6 +448,8 @@ def write_pack(spec: dict, dry_run=False, overwrite=False, out_dir: Optional[Pat
                 old = base.get(key)
                 if SOURCE_RE.search(key):
                     value = source_index(value, base.sources)
+                if DEST_RE.match(key):
+                    value = str(value).strip("'").replace(".", ":", 1)
                 new = base.set(key, value)
                 if SOURCE_RE.search(key) and base.sources:
                     issue = None if 0 <= int(new) < len(base.sources) else \
