@@ -66,7 +66,7 @@ things up with `uhe.py manual Zebra3 <topic>`), or were tested by ear (marked
 | `MM1..32` | **the modulation matrix** [91-93], see below | |
 | `GridAmp` | the four lanes' levels | `Vol1..4` (lane level), `Pan1..4`, `Mute1..4`; `Amp?Src` is not a matrix source number |
 | `GridMix` | lane to FX bus routing | `Send1..3`, `L?Out` |
-| `Rev1/2` | reverb [95] | `Algo` (classic plate with pre-delay, or lush), `Predly`, `Size`, `Decay`, `Damping`, `Diffusn`, `depth` (modulation), `Tone`, `DryWet` |
+| `Rev1/2` | reverb [95] | `Algo` (manual p.95 order: classic plate with pre-delay, lush; 0/1 assumed; factory: 1 x939, 0 x277), `Predly`, `Size`, `Decay`, `Damping`, `Diffusn`, `depth` (modulation), `Tone`, `DryWet` |
 | `TxVb` | Texture: granular + reverb [96-97] | `GrnSize`, `GrnShpe`, `pos`, `rdSpeed`/`rdSpdFn` (grain pitch), `jitter`, `scatter`, `dir`, `density`, `width`, `Fdbck`, `Size`, `Decay`, `Amount` (to 50 fades in reverb, above fades out grains), `DryWet`, `Trigger` (freeze) |
 | `Delay1/2` | stereo delay [98-99] | `tpSync`, `tapL`/`tapR`, `ratio`, `fdbck` (safe to ~94), `colour` (digital, surge, haze), `mod`, `diff` (diffusion: smears toward reverb), `lPass`/`hPass`, `width`, `drywet`, `rMode` (stereo, cross, summed) |
 | `ModFX1..4` | chorus / flanger / phaser [101-103] | `effect`, `speed`, `depth`, `ctrDly`, `fdbck`, `nvoic`, `drywet` |
@@ -159,6 +159,12 @@ Add what the listener liked or rejected here, with the date and pack.
 - 2026-10-14, Zebra 3 test on `01 Three Osc Poly`: the edits read as "more
   mellow and a slower attack" (filter and Env1 heard; Osc1 +12 not
   remarked on).
+- 2026-10-14, pack `Zebra3 Study Drones` (8 single-change tests on factory
+  drones: LFO wave, drift type and amount, transpose, a new matrix slot,
+  unison, wavetable position, reverb off): all sounded very close to their
+  base presets, too close to confirm or refute anything. Small moves vanish
+  in dense, effect-heavy drones; test with extreme values, and design
+  presets with many bold changes.
 
 ## Not yet verified
 

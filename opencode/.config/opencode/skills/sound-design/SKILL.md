@@ -46,9 +46,15 @@ change it: the guide explains what each parameter does musically.
    or `diff` them. Prefer factory presets (`--source factory`) whose
    oscillator and filter models already suit the sound (see the models table
    in the synth guide).
-3. **Design each preset as a variation** of its starting preset: usually
-   4-15 deliberate changes, each with a reason ("ENV1.Atk 1 -> 45: slow swell").
-   Use `params` for ranges. Keep `VCA1.Vol` near the base preset's so the
+3. **Design each preset as a variation** of its starting preset that a
+   listener would call a different sound, not a tweak: 8-20 deliberate
+   changes, each with a reason ("ENV1.Atk 1 -> 45: slow swell"), spread over
+   at least three areas: source (waveform, wavetable position, unison,
+   tuning), tone (filter type, cutoff, resonance, drive), shape (envelopes),
+   movement (LFO/MSEG rates and depths, matrix amounts, macros) and space
+   (effects). Move values far enough to hear: a cutoff from 80 to 74 or a
+   depth from 30 to 35 is inaudible on a pad; 80 to 45 is not. Use `params`
+   for ranges. Keep `VCA1.Vol` near the base preset's so the
    pack is level-matched. Leave `OPT`, `PCore`, `Scope1` and `CLK` alone.
 4. **Write the spec** as `spec.json` in your work directory:
 
