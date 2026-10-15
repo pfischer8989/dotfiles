@@ -6,7 +6,8 @@
 -- Your own settings win: save an FX chain under FXChains/Empire/ with one of
 -- these names and the build uses it instead of the default plugins:
 --   Channel Strip   (synth tracks: AMEK 9099 -> Presswerk)
---   Guitar Amp      (guitar tracks: Neural Amp Modeler)
+--   Guitar Amp      (guitar tracks: Neural Amp Modeler; no Archetype Plini X
+--                    default: its AU crashed REAPER when a build removed it)
 --   Bus             (DRUMS, SYNTHS, GTR, AMBIENT folder buses)
 --   Mix Bus         (master)
 --   Verb Short, Verb Long, Shimmer, Delay, Drum Crush   (the returns)
@@ -53,7 +54,6 @@ local PLUG = {
   diva = "VST3:Diva (u-he)",
   hive = "VST3:Hive (u-he)",
   nam = "VST3:NeuralAmpModeler (Steven Atkinson)",
-  plini = "AU:Neural DSP: Archetype Plini X",
 }
 
 local function addfx(tr, key)
@@ -181,7 +181,6 @@ local TEMPLATES = {
   { "Drone - Zebra 3", synth("Drone", "zebra3", "AMBIENT", "Verb Long:-12,Shimmer:-18,Delay:-18") },
   { "Pad - Diva", synth("Pad", "diva", "AMBIENT", "Verb Long:-14,Shimmer:-20,Delay:-20") },
   { "Guitar - NAM", guitar("Guitar", "nam", "GTR", "Verb Short:-18,Delay:-22") },
-  { "Guitar - Plini", guitar("Guitar Plini", "plini", "GTR", "Verb Short:-18,Delay:-22") },
   { "Guitar Double - NAM", function()
       -- Two performances: record L first (armed), then arm R for the second take.
       guitar("Gtr L", "nam", "GTR", "Verb Short:-20", { pan = -0.8 })()
