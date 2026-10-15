@@ -118,80 +118,93 @@ function reportState(state, sessionID) {
   return request("pane.report_agent", params);
 }
 
-export const HerdrAgentStatePlugin = async () => {
-  if (
-    process.env.HERDR_ENV !== "1" ||
-    !process.env.HERDR_SOCKET_PATH ||
-    !process.env.HERDR_PANE_ID
-  ) {
-    return {};
-  }
+export default {
+  id: "herdr.agent-state",
+  async setup(ctx) {
+    if (
+      process.env.HERDR_ENV !== "1" ||
+      !process.env.HERDR_SOCKET_PATH ||
+      !process.env.HERDR_PANE_ID
+    ) {
+      return;
+    }
 
-  return {
-    "chat.message": async ({ sessionID }) => {
+    await ctx.session.hook("prompt", async ({ sessionID }) => {
       if (sessionID && childSessions.has(sessionID)) {
         return;
       }
       await reportState("working", sessionID);
-    },
-    event: async ({ event }) => {
-      const type = event?.type;
-      const properties = event?.properties ?? {};
-      const sessionID = sessionIDFromProperties(properties);
+    });
 
-      const info = properties.info;
-      if (info?.id && info.parentID) {
-        childSessions.add(info.id);
-      }
-      if (sessionID && childSessions.has(sessionID)) {
-        const state = CHILD_EVENT_STATES.get(type);
-        if (state) {
-          await reportState(state);
-        }
-        return;
-      }
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        for await (const event of ctx.event.subscribe({ signal: controller.signal })) {
+          const type = event?.type;
+          const properties = event?.properties ?? {};
+          const sessionID = sessionIDFromProperties(properties);
 
-      switch (type) {
-        case "session.created":
-          // Creation is server-global, so an attached client may own it. The
-          // TUI plugin separately reports the root selected in this pane.
-          reportedRootSessionID = sessionID;
-          break;
-        case "session.updated":
-          if (sessionID && sessionID !== reportedRootSessionID) {
-            await reportSession(sessionID);
+          const info = properties.info;
+          if (info?.id && info.parentID) {
+            childSessions.add(info.id);
           }
-          break;
-        case "session.status": {
-          const state = stateFromSessionStatus(properties.status);
-          if (state) {
-            await reportState(state, sessionID);
-          } else {
-            await reportSession(sessionID);
+          if (sessionID && childSessions.has(sessionID)) {
+            const state = CHILD_EVENT_STATES.get(type);
+            if (state) {
+              await reportState(state);
+            }
+            continue;
           }
-          break;
+
+          switch (type) {
+            case "session.created":
+              // Creation is server-global, so an attached client may own it.
+              // The TUI plugin separately reports the root selected in this pane.
+              reportedRootSessionID = sessionID;
+              break;
+            case "session.updated":
+              if (sessionID && sessionID !== reportedRootSessionID) {
+                await reportSession(sessionID);
+              }
+              break;
+            case "session.status": {
+              const state = stateFromSessionStatus(properties.status);
+              if (state) {
+                await reportState(state, sessionID);
+              } else {
+                await reportSession(sessionID);
+              }
+              break;
+            }
+            case "tool.execute.before":
+            case "tool.execute.after":
+            case "permission.replied":
+            case "question.replied":
+            case "question.rejected":
+            case "session.compacted":
+              await reportState("working", sessionID);
+              break;
+            case "permission.asked":
+            case "question.asked":
+            case "session.error":
+              await reportState("blocked", sessionID);
+              break;
+            case "session.idle":
+              await reportState("idle", sessionID);
+              break;
+            case "session.deleted":
+              break;
+            default:
+              break;
+          }
         }
-        case "tool.execute.before":
-        case "tool.execute.after":
-        case "permission.replied":
-        case "question.replied":
-        case "question.rejected":
-        case "session.compacted":
-          await reportState("working", sessionID);
-          break;
-        case "permission.asked":
-        case "question.asked":
-        case "session.error":
-          await reportState("blocked", sessionID);
-          break;
-        case "session.idle":
-          await reportState("idle", sessionID);
-          break;
-        case "session.deleted":
-          break;
-        default:
-          break;
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          console.error("Herdr event subscription failed", error);
+        }
       }
-    },
-  };
+    })();
+
+    return () => controller.abort();
+  },
 };

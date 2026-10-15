@@ -58,6 +58,16 @@ for k = 0, R.CountTracks(0) - 1 do
   if R.GetMediaTrackInfo_Value(tr, "B_MAINSEND") == 0 then line = line .. " no-parent-send" end
   local f = fx(tr)
   if f ~= "" then line = line .. "  fx: " .. f end
+  for k = 0, R.TrackFX_GetCount(tr) - 1 do
+    for p = 0, R.TrackFX_GetNumParams(tr, k) - 1 do
+      local _, pn = R.TrackFX_GetParamName(tr, k, p, "")
+      local l = pn:lower()
+      if l:find("mix") or l:find("wet") then
+        local _, v = R.TrackFX_GetFormattedParamValue(tr, k, p, "")
+        line = line .. "  [" .. pn .. "=" .. v .. "]"
+      end
+    end
+  end
   for s = 0, R.GetTrackNumSends(tr, 0) - 1 do
     local dst = R.GetTrackSendInfo_Value(tr, 0, s, "P_DESTTRACK")
     local v = R.GetTrackSendInfo_Value(tr, 0, s, "D_VOL")
