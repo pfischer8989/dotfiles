@@ -80,7 +80,7 @@ local function full_wet(tr)
     for p = 0, R.TrackFX_GetNumParams(tr, fx) - 1 do
       local _, pn = R.TrackFX_GetParamName(tr, fx, p, "")
       local l = pn:lower()
-      if l == "mix" or l == "wet" or l == "dry/wet" or l == "drywet" or l == "dry wet" then
+      if l == "mix" or l == "wet" or l == "wetdry" or l == "drywet" or l == "dry/wet" or l == "dry wet" then
         R.TrackFX_SetParamNormalized(tr, fx, p, 1.0)
       end
     end
