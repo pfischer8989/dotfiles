@@ -104,6 +104,14 @@ class UheCase(unittest.TestCase):
         self.assertIn("$$$$1920", path.read_text(encoding="latin-1"))
         self.assertIn("VCF1.Freq: 120.00 -> 70.50", written[0][1])
 
+    def test_text_above_latin1_is_written_as_utf8(self):
+        # PACK-001: a description with an apostrophe (written as ’) or other
+        # characters above U+00FF crashed the latin-1 write.
+        uhe.write_pack(self.spec(description="Don't stop — it’s loud ≡ 11",
+                                 usage="MW = grit"))
+        raw = (uhe.USER / "Diva/Empire/Test Pack/Dark Swell.h2p").read_bytes()
+        self.assertIn("'Don’t stop — it’s loud ≡ 11'".encode("utf-8"), raw)
+
     def test_bad_presets_write_nothing(self):
         cases = [
             {"set": {"VCF1.Nope": 1}},                       # unknown parameter

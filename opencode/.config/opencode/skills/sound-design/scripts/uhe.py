@@ -131,10 +131,18 @@ class Preset:
         keys = [k for k in META_ORDER if self.meta.get(k)] + \
                [k for k in self.meta if k not in META_ORDER and self.meta[k]]
         for k in keys:
-            value = self.meta[k].replace("'", "’").replace("\n", "\\r\\n")
+            value = file_chars(self.meta[k].replace("'", "’").replace("\n", "\\r\\n"))
             head += f"{k}:\n'{value}'\n\n"
         out = head + "*/\n\n" + "\n".join(self.lines) + "\n"
         return out + "\n\n\n" + self.binary if self.binary else out
+
+
+def file_chars(s: str) -> str:
+    """Text as the latin-1 view of the file's bytes. Presets are read and
+    written as latin-1 (byte for byte), and u-he stores text as UTF-8, so a
+    character above U+00FF (a curly apostrophe from the spec) goes in as its
+    UTF-8 bytes; text read from a preset is already bytes and stays as is."""
+    return "".join(c if ord(c) < 256 else c.encode("utf-8").decode("latin-1") for c in s)
 
 
 def format_value(old: str, value) -> str:
