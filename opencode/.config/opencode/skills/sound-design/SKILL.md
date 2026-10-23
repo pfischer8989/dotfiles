@@ -1,6 +1,6 @@
 ---
 name: sound-design
-description: Use when designing synth sounds or a preset pack for Paul's u-he synths (Diva, Zebra 3) on Romulus. Starts from the closest factory presets, writes new presets as intentional variations with uhe.py, and saves them where the synth's preset browser shows them (User > Empire > <pack>).
+description: Use when designing synth sounds or a preset pack for Paul's u-he synths (Diva, Zebra 3) on Romulus, or rendering audio demos of a pack. Starts from the closest factory presets, writes new presets as intentional variations with uhe.py, and saves them where the synth's preset browser shows them (User > Empire > <pack>); render.py plays presets headless and writes levelled WAV demos.
 ---
 
 # Sound design for u-he synths
@@ -109,3 +109,63 @@ change it: the guide explains what each parameter does musically.
   derived from parameter values ("VCA1.Vol 42-46, close to each other" is
   fine; "matched within 2 dB" is not). Only describe a change you actually
   made (don't call a preset "detuned" unless it is, or say it was already).
+
+## Demos
+
+`scripts/render.py` renders presets to WAV with no DAW: it loads each preset
+into the plugin, plays the MIDI phrase you write with the macro knobs
+moving, and levels every clip to the same loudness (-18 dBFS RMS, peaks at
+most -1 dBFS). Run it with the audio venv, not `python3`:
+
+```bash
+~/.venvs/audio/bin/python <skill>/scripts/render.py demos.json --check        # validate
+~/.venvs/audio/bin/python <skill>/scripts/render.py demos.json --out <dir>    # render
+```
+
+Loading the plugin takes about a minute, then each clip renders in seconds,
+so put every clip in one spec.
+
+1. **Choose the presets.** Read the pack's preset list (the `.h2p` files in
+   the pack folder; `uhe.py show` for a preset's description and macro
+   usage). Pick ones that together show the pack's range: different
+   categories and registers, the pack's signature sounds first. A preset the
+   brief names is always in.
+2. **Write a phrase per preset** that plays it the way a buyer would:
+   - bass: a riff in its register (A1-A2), with rests so the envelope shows;
+   - lead: a melody with a held note, mid to high register (A3-A5);
+   - pad, drone, atmosphere: long chords or one held note, 2-4 changes;
+   - stab, brass, keys: rhythmic chords on the beat and off it;
+   - drum, hit, percussion: a groove with velocity accents (the same note
+     repeated, or a few pitches);
+   - riser, FX: one long note across the whole clip.
+
+   Stay in one key across the demos unless the brief says otherwise (A or
+   D minor suit most packs). 15-30 s each (`bars` x 4 beats at `bpm`, plus
+   `tail` seconds for the release). Move each preset's macros the way its
+   Usage describes (A-D, 0-1): a slow sweep across the clip, or a change at
+   a section boundary, so the clip shows what the knobs do.
+3. **Write the spec** (`demos.json`):
+
+   ```json
+   {"synth": "Zebra3", "clips": [
+     {"preset": "<path to the .h2p>", "file": "warrig-01-war-brass",
+      "bpm": 120, "bars": 8, "tail": 3,
+      "notes": [[0, "A2 E3 A3", 4, 100], [4, "F2 C3 F3", 4, 105]],
+      "macros": {"A": [[0, 0.1], [32, 0.9]]}}
+   ]}
+   ```
+
+   `notes` are `[start beat, "note names", length in beats, velocity 1-127]`
+   (C4 = middle C); `macros` are `[beat, value]` points. `file` is
+   lowercase with dashes and becomes `<file>.wav`.
+4. **Check, render, read the numbers.** `--check` first, then render.
+   `render.json` lists each clip's length, RMS, peak and gain. A clip marked
+   `peak_limited` came out quieter than the rest (one loud transient):
+   soften the velocities or the macro that spikes and render again. A
+   `silent` clip means the phrase is outside what the preset plays (wrong
+   register, a note too short for a slow attack): fix the phrase.
+5. **Report**: a table with each clip's preset, why it's in, what's played
+   (key, tempo, the part) and the macro moves; the numbers from
+   `render.json`; then what to listen for. You can't hear the clips: describe
+   what you wrote, not how it sounds.
+
