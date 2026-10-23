@@ -1,6 +1,6 @@
 ---
 name: sound-design
-description: Use when designing synth sounds or a preset pack for Paul's u-he synths (Diva, Zebra 3) on Romulus, or rendering audio demos of a pack. Starts from the closest factory presets, writes new presets as intentional variations with uhe.py, and saves them where the synth's preset browser shows them (User > Empire > <pack>); render.py plays presets headless and writes levelled WAV demos.
+description: Use when designing synth sounds or a preset pack for Paul's u-he synths (Diva, Zebra 3) on Romulus, or rendering audio demos of a pack. Starts from the closest factory presets, writes new presets as intentional variations with uhe.py, and saves them where the synth's preset browser shows them (User > Empire > <pack>); render.py plays presets headless and writes levelled MP3 demos.
 ---
 
 # Sound design for u-he synths
@@ -112,7 +112,7 @@ change it: the guide explains what each parameter does musically.
 
 ## Demos
 
-`scripts/render.py` renders presets to WAV with no DAW: it loads each preset
+`scripts/render.py` renders presets to MP3 with no DAW: it loads each preset
 into the plugin, plays the MIDI phrase you write with the macro knobs
 moving, and levels every clip to the same loudness (-18 dBFS RMS, peaks at
 most -1 dBFS). Run it with the audio venv, not `python3`:
@@ -157,7 +157,8 @@ so put every clip in one spec.
 
    `notes` are `[start beat, "note names", length in beats, velocity 1-127]`
    (C4 = middle C); `macros` are `[beat, value]` points. `file` is
-   lowercase with dashes and becomes `<file>.wav`.
+   lowercase with dashes and becomes `<file>.mp3` (320 kbps, under Gumroad's
+   5 MB limit; `--wav` also writes 24-bit WAVs, only if the brief asks).
 4. **Check, render, read the numbers.** `--check` first, then render.
    `render.json` lists each clip's length, RMS, peak and gain. A clip marked
    `peak_limited` came out quieter than the rest (one loud transient):

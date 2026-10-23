@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Render u-he presets to WAV demos: load each preset into the plugin, play a
-phrase of MIDI through it with the macro knobs moving, and write a levelled
-24-bit WAV per clip.
+"""Render u-he presets to audio demos: load each preset into the plugin, play
+a phrase of MIDI through it with the macro knobs moving, and write a levelled
+320 kbps MP3 per clip (Gumroad takes audio up to 5 MB; 60 s is 2.4 MB).
 
     ~/.venvs/audio/bin/python render.py demos.json --out <dir>
-    ~/.venvs/audio/bin/python render.py demos.json --check    validate only
+    ~/.venvs/audio/bin/python render.py demos.json --out <dir> --wav   also 24-bit WAVs
+    ~/.venvs/audio/bin/python render.py demos.json --check             validate only
 
 The plugin runs headless through pedalboard (install once:
 `python3 -m venv ~/.venvs/audio && ~/.venvs/audio/bin/pip install pedalboard mido numpy`).
@@ -44,6 +45,8 @@ TARGET_RMS_DB = -18.0             # every clip is levelled to this loudness...
 PEAK_CEILING_DB = -1.0            # ...unless that would push a peak above this
 FADE_S = 0.3
 MAX_SECONDS = 60.0
+MP3_KBPS = 320
+MAX_UPLOAD_BYTES = 5 * 1000 * 1000    # Gumroad's limit for an audio file
 MACRO_PARAM = "internal_control_{}"
 NOTE_RE = re.compile(r"^([A-Ga-g])([#b]?)(-?\d)$")
 JUCE_B64 = ".ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+"
@@ -197,7 +200,7 @@ def plugin_path(synth: str) -> Path:
 
 
 # -- rendering --------------------------------------------------------------
-def render(spec: dict, out: Path, log=print) -> List[dict]:
+def render(spec: dict, out: Path, wav: bool = False, log=print) -> List[dict]:
     import numpy as np
     from mido import Message
     from pedalboard import load_plugin
@@ -247,16 +250,24 @@ def render(spec: dict, out: Path, log=print) -> List[dict]:
         audio *= gain
         fade = int(FADE_S * SAMPLE_RATE)
         audio[:, -fade:] *= np.linspace(1.0, 0.0, fade)
-        path = out / f"{clip['file']}.wav"
-        with AudioFile(str(path), "w", SAMPLE_RATE, 2, bit_depth=24) as f:
-            f.write(audio.astype(np.float32))
-        r = {"file": path.name, "preset": preset.stem, "seconds": round(total_s, 2),
+        audio = audio.astype(np.float32)
+        path = out / f"{clip['file']}.mp3"
+        with AudioFile(str(path), "w", SAMPLE_RATE, 2, quality=MP3_KBPS) as f:
+            f.write(audio)
+        if wav:
+            with AudioFile(str(out / f"{clip['file']}.wav"), "w", SAMPLE_RATE, 2, bit_depth=24) as f:
+                f.write(audio)
+        size = path.stat().st_size
+        r = {"file": path.name, "bytes": size, "preset": preset.stem, "seconds": round(total_s, 2),
              "raw_peak_db": round(db(peak), 1), "peak_db": round(db(peak * gain), 1),
              "rms_db": round(db(rms * gain), 1), "gain_db": round(db(gain), 1),
              "peak_limited": capped, "clipped_before_levelling": peak > 1.0}
+        if size > MAX_UPLOAD_BYTES:
+            r["error"] = f"{size / 1e6:.1f} MB: over Gumroad's 5 MB"
         results.append(r)
-        log(f"{path.name}: {r['seconds']} s, rms {r['rms_db']} dBFS, peak {r['peak_db']} dBFS"
-            + (" (quieter: peak-limited)" if capped else ""))
+        log(f"{path.name}: {r['seconds']} s, {size / 1e6:.1f} MB, rms {r['rms_db']} dBFS, "
+            f"peak {r['peak_db']} dBFS" + (" (quieter: peak-limited)" if capped else "")
+            + (f" ERROR {r['error']}" if "error" in r else ""))
     (out / "render.json").write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8")
     return results
 
@@ -264,7 +275,8 @@ def render(spec: dict, out: Path, log=print) -> List[dict]:
 def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("spec")
-    ap.add_argument("--out", help="folder for the WAVs and render.json")
+    ap.add_argument("--out", help="folder for the MP3s and render.json")
+    ap.add_argument("--wav", action="store_true", help="also write 24-bit WAVs (masters)")
     ap.add_argument("--check", action="store_true", help="validate the spec and presets only")
     a = ap.parse_args(argv)
     try:
@@ -278,7 +290,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             return 0
         if not a.out:
             raise SpecError("--out is required to render")
-        results = render(spec, Path(a.out))
+        results = render(spec, Path(a.out), wav=a.wav)
     except (SpecError, uhe.UheError, json.JSONDecodeError, OSError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
