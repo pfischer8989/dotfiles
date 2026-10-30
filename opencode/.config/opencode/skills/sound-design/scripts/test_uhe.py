@@ -92,15 +92,16 @@ class UheCase(unittest.TestCase):
 
     def test_pack_writes_validated_presets(self):
         written = uhe.write_pack(self.spec())
-        path = uhe.USER / "Diva/Empire/Test Pack/Dark Swell.h2p"
+        path = uhe.USER / "Diva/cListen4/Test Pack/Dark Swell.h2p"
         self.assertEqual(written[0][0], path)
         p = uhe.Preset.load(path)
         self.assertEqual(p.get("ENV1.Atk"), "75.00")
         self.assertEqual(p.get("VCF1.Freq"), "70.50")
         self.assertEqual(p.get("FX1.Module"), "'Plate1'")
         self.assertIn("#FX1=0\n", path.read_text(encoding="latin-1"))
-        self.assertEqual(p.meta["Bank"], "Empire Test Pack")
-        self.assertEqual(p.meta["Author"], "Empire")
+        self.assertEqual(p.meta["Bank"], "cListen4 Test Pack")
+        self.assertEqual(p.meta["Author"], "cListen4")
+        self.assertFalse((uhe.USER / "Diva/Empire").exists())
         self.assertIn("$$$$1920", path.read_text(encoding="latin-1"))
         self.assertIn("VCF1.Freq: 120.00 -> 70.50", written[0][1])
 
@@ -109,7 +110,7 @@ class UheCase(unittest.TestCase):
         # characters above U+00FF crashed the latin-1 write.
         uhe.write_pack(self.spec(description="Don't stop — it’s loud ≡ 11",
                                  usage="MW = grit"))
-        raw = (uhe.USER / "Diva/Empire/Test Pack/Dark Swell.h2p").read_bytes()
+        raw = (uhe.USER / "Diva/cListen4/Test Pack/Dark Swell.h2p").read_bytes()
         self.assertIn("'Don’t stop — it’s loud ≡ 11'".encode("utf-8"), raw)
 
     def test_bad_presets_write_nothing(self):
@@ -126,7 +127,7 @@ class UheCase(unittest.TestCase):
                 spec["presets"].append(dict(spec["presets"][0], name="Second", **bad))
                 with self.assertRaises(uhe.UheError):
                     uhe.write_pack(spec)
-                self.assertFalse((uhe.USER / "Diva/Empire/Test Pack").exists())
+                self.assertFalse((uhe.USER / "Diva/cListen4/Test Pack").exists())
 
     def test_existing_preset_needs_overwrite(self):
         uhe.write_pack(self.spec())
@@ -139,7 +140,7 @@ class UheCase(unittest.TestCase):
         spec.write_text(json.dumps(self.spec()))
         self.assertEqual(uhe.main(["find", "Diva", "bass", "--category", "Bass"]), 0)
         self.assertEqual(uhe.main(["pack", str(spec), "--dry-run"]), 0)
-        self.assertFalse((uhe.USER / "Diva/Empire").exists())
+        self.assertFalse((uhe.USER / "Diva/cListen4").exists())
         self.assertEqual(uhe.main(["typical", "Diva", "--category", "Bass"]), 0)
         out = io.StringIO()
         with redirect_stdout(out):

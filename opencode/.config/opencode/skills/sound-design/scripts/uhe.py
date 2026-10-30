@@ -34,7 +34,8 @@ FACTORY = Path(os.environ.get("UHE_FACTORY_PRESETS", "/Library/Audio/Presets/u-h
 USER = Path(os.environ.get("UHE_USER_PRESETS", Path.home() / "Library/Audio/Presets/u-he"))
 CATALOGS = Path(os.environ.get("UHE_CATALOG_DIR", Path.home() / ".empire/uhe"))
 MANUALS = Path(os.environ.get("UHE_MANUALS", Path.home() / ".empire/manuals"))
-OUR_FOLDER = "Empire"           # everything we write goes under <user>/<Synth>/Empire/
+AUTHOR = "cListen4"             # default author: packs go under <user>/<Synth>/cListen4/<pack>/
+OUR_FOLDER = "Empire"           # legacy folder of earlier runs (still recognised, never written)
 BINARY_MARK = "// Section for ugly compressed binary Data"
 META_RE = re.compile(r"/\*@Meta\n(.*?)\*/\n*", re.S)
 FIELD_RE = re.compile(r"^(\w[\w ]*):\n'(.*?)'\n", re.S | re.M)
@@ -191,7 +192,7 @@ def build_catalog(synth: str) -> dict:
             continue
         root = FACTORY / synth if source == "factory" else USER / synth
         rel = path.relative_to(root).as_posix()
-        ours = rel.startswith(OUR_FOLDER + "/")
+        ours = rel.startswith((OUR_FOLDER + "/", AUTHOR + "/"))
         cats = [c for c in p.meta.get("Categories", "").split(", ") if c]
         presets.append({
             "name": path.stem, "path": str(path), "source": "empire" if ours else source,
@@ -446,7 +447,8 @@ def write_pack(spec: dict, dry_run=False, overwrite=False, out_dir: Optional[Pat
         raise UheError("the spec needs synth, pack and presets")
     catalog = catalog_for(synth)
     known_cats = {k for k in catalog["categories"] if ":" in k}
-    dest = out_dir or USER / synth / OUR_FOLDER / pack
+    author = safe_name(spec.get("author") or AUTHOR)
+    dest = out_dir or USER / synth / author / pack
     plans, problems, names = [], [], set()
     for i, item in enumerate(spec["presets"], 1):
         label = item.get("name") or f"preset {i}"
@@ -484,8 +486,8 @@ def write_pack(spec: dict, dry_run=False, overwrite=False, out_dir: Optional[Pat
                     raise UheError(f"category {cat!r} is not one {synth} uses "
                                    f"(e.g. {', '.join(sorted(known_cats)[:6])}, ...)")
             base.meta = {
-                "Bank": f"{OUR_FOLDER} {pack}",
-                "Author": spec.get("author") or OUR_FOLDER,
+                "Bank": f"{author} {pack}",
+                "Author": author,
                 "Usage": item.get("usage", ""),
                 "Description": item.get("description", ""),
                 "Categories": ", ".join(item.get("categories") or []),

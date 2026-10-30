@@ -1,6 +1,6 @@
 ---
 name: sound-design
-description: Use when designing synth sounds or a preset pack for Paul's u-he synths (Diva, Zebra 3) on Romulus, or rendering audio demos of a pack. Starts from the closest factory presets, writes new presets as intentional variations with uhe.py, and saves them where the synth's preset browser shows them (User > Empire > <pack>); render.py plays presets headless and writes levelled MP3 demos.
+description: Use when designing synth sounds or a preset pack for Paul's u-he synths (Diva, Zebra 3) on Romulus, or rendering audio demos of a pack. Starts from the closest factory presets, writes new presets as intentional variations with uhe.py, and saves them where the synth's preset browser shows them (User > cListen4 > <pack>); render.py plays presets headless and writes levelled MP3 demos.
 ---
 
 # Sound design for u-he synths
@@ -85,16 +85,21 @@ change it: the guide explains what each parameter does musically.
 5. **Validate, then write**: `uhe.py pack spec.json --dry-run`; fix every
    error it reports (nothing is written while any preset is invalid); then
    run it without `--dry-run`. Presets land in
-   `~/Library/Audio/Presets/u-he/<Synth>/Empire/<pack>/`.
+   `~/Library/Audio/Presets/u-he/<Synth>/cListen4/<pack>/`, with Bank
+   `cListen4 <pack>` and Author `cListen4` (a spec's `author` replaces
+   cListen4 in all three).
 6. **Report** (your report.md): where to find the pack in the synth's
-   browser (User > Empire > <pack>; reopen the plugin window if it doesn't
+   browser (User > cListen4 > <pack>; reopen the plugin window if it doesn't
    show yet), then a table with each preset's name, what it should sound
    like, its starting preset and the key changes and why. End with what to
    listen for when auditioning. Attach `spec.json`.
 
 ## Rules
 
-- Write only under `<Synth>/Empire/`. Never modify factory presets or the
+- Write only under `<Synth>/cListen4/` (never `<Synth>/Empire/`, the old
+  folder). Every preset's Usage names all four macros (`Ctrl A = <name> (...)`).
+  The Perform panel knob labels live in the binary block and come from the
+  base preset; `uhe.py` can't change them yet. Never modify factory presets or the
   user's own presets; `uhe.py` refuses to overwrite unless `--overwrite`.
 - A later pass on the same pack (the reviewer asked for changes): name it
   `<pack> v2`, `v3`, ... so earlier versions stay for comparison, unless the
