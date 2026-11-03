@@ -1,6 +1,6 @@
 -- Empire Panel
--- Shows which REAPER runs on the Empire board are waiting for you and relays
--- approve, comment or deny. The board stays the source of truth; the panel only reads it and
+-- Shows which REAPER runs on the Empire board are waiting for you, with the
+-- same Accept and Another pass as the dashboard. The board stays the source of truth; the panel only reads it and
 -- sends what the dashboard's buttons send. Board requests run in the background
 -- (empire_panel/http.sh), so REAPER never waits on the network.
 --
@@ -77,7 +77,8 @@ local runs, waiting = {}, {}
 local board = { ok = false, error = "connecting", at = nil }
 local selected_id = nil
 local note = ""
-local confirm = nil -- "approve" | "deny" while asking to confirm
+local mode = nil -- "accept" while confirming, "another_pass" while writing a note
+local focus_note = false
 local message = nil
 local last_poll = -1e9
 local last_check = 0
@@ -115,7 +116,7 @@ local function decide(item, action)
     message = path
     return
   end
-  local label = ({ approve = "Approved", deny = "Sent back", comment = "Comment sent" })[action]
+  local label = ({ accept = "Accepted", another_pass = "Another pass" })[action]
   message = "Sending..."
   log(string.format("%s %s", action, item.stage.id))
   request("decide", method, path, body, function(status, text)
@@ -200,7 +201,7 @@ local function draw_waiting()
     local s = item.stage
     local label = string.format("%s: %s (pass %d)##%s", item.run.run_id, s.stage or s.id, s.round or 1, s.id)
     if ImGui.Selectable(ctx, label, s.id == selected_id) and s.id ~= selected_id then
-      selected_id, note, confirm = s.id, "", nil
+      selected_id, note, mode = s.id, "", nil
     end
   end
 end
@@ -209,29 +210,40 @@ local function draw_decision()
   local item = selected_item()
   if not item then return end
   local s = item.stage
-  local busy = has_inflight("decide")
   ImGui.SeparatorText(ctx, s.title or s.id)
   if s.loop_note then ImGui.TextWrapped(ctx, "Last note: " .. s.loop_note) end
-  local _, text = ImGui.InputTextMultiline(ctx, "##note", note, -1, 70)
-  note = text
 
-  ImGui.BeginDisabled(ctx, busy)
-  if confirm then
-    local word = confirm == "approve" and "Approve" or "Send back"
-    ImGui.TextColored(ctx, AMBER, word .. " " .. s.id .. "?")
-    if ImGui.Button(ctx, "Yes, " .. word:lower()) then
-      decide(item, confirm)
-      confirm = nil
+  ImGui.BeginDisabled(ctx, has_inflight("decide"))
+  if mode == "another_pass" then
+    ImGui.Text(ctx, "What should the AI change?")
+    if focus_note then
+      ImGui.SetKeyboardFocusHere(ctx)
+      focus_note = false
+    end
+    local _, text = ImGui.InputTextMultiline(ctx, "##note", note, -1, 90)
+    note = text
+    if ImGui.Button(ctx, "Send") then
+      decide(item, "another_pass")
+      mode = nil
     end
     ImGui.SameLine(ctx)
-    if ImGui.Button(ctx, "Cancel") then confirm = nil end
-  else
-    if ImGui.Button(ctx, core.is_review(s) and "Approve" or "Done") then confirm = "approve" end
+    if ImGui.Button(ctx, "Cancel") then mode = nil end
+  elseif mode == "accept" then
+    local word = core.is_review(s) and "Accept" or "Finish"
+    ImGui.TextColored(ctx, AMBER, word .. " " .. (s.stage or s.id) .. "?")
+    if ImGui.Button(ctx, "Yes") then
+      decide(item, "accept")
+      mode = nil
+    end
     ImGui.SameLine(ctx)
-    if ImGui.Button(ctx, "Comment") then decide(item, "comment") end
+    if ImGui.Button(ctx, "Cancel") then mode = nil end
+  else
+    if ImGui.Button(ctx, core.is_review(s) and "Accept" or "Done") then mode = "accept" end
     if core.is_review(s) then
       ImGui.SameLine(ctx)
-      if ImGui.Button(ctx, "Deny") then confirm = "deny" end
+      if ImGui.Button(ctx, "Another pass") then
+        mode, focus_note = "another_pass", true
+      end
     end
   end
   ImGui.EndDisabled(ctx)

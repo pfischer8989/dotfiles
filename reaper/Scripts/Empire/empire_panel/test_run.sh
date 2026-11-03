@@ -30,6 +30,9 @@ case "$1" in
     call GET /api/tasks/panel-test-step
     ;;
   remove)
+    # only finished tasks can be deleted
+    call PATCH /api/tasks/panel-test-step/complete '{"status":"done"}'
+    call PATCH /api/tasks/panel-test-gate/complete '{"status":"done"}'
     call DELETE /api/tasks/panel-test-step
     call DELETE /api/tasks/panel-test-gate
     ;;

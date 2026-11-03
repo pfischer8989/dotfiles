@@ -171,22 +171,19 @@ function core.waiting(runs)
 end
 
 -- The request for a decision. Returns method, path, body or nil and a message.
--- A review stage has approve (Accept) and deny (Another pass); any other human
--- stage only has approve (Done), as on the dashboard.
+-- As on the dashboard, a review stage has Accept and Another pass (with an
+-- optional note for the AI); any other human stage only has Done, which is what
+-- "accept" sends for it.
 function core.decision(stage, action, note)
   local base = "/api/tasks/" .. url_encode(stage.id)
   note = note or ""
-  if action == "approve" then
+  if action == "accept" then
     if core.is_review(stage) then return "POST", base .. "/accept", nil end
     return "PATCH", base .. "/complete",
       core.json_object({ status = "done", summary = "completed in the REAPER panel" })
-  elseif action == "deny" then
+  elseif action == "another_pass" then
     if not core.is_review(stage) then return nil, "this stage has no Another pass" end
     return "POST", base .. "/reopen", core.json_object({ note = note })
-  elseif action == "comment" then
-    if not note:find("%S") then return nil, "write a comment first" end
-    return "POST", base .. "/log",
-      core.json_object({ status = "comment", actor = "panel", message = note })
   end
   return nil, "unknown action " .. tostring(action)
 end
