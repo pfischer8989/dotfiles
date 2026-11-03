@@ -54,6 +54,19 @@ check("waiting run", w[1].run.run_id, "r1")
 check("waiting second", w[2].stage.id, "step")
 check("no runs", #core.waiting(nil), 0)
 
+-- only REAPER workflows
+local mixed = {
+  { run_id = "song", workflow = "Song Construction" },
+  { run_id = "cover", workflow = "Cover Art" },
+  { run_id = "none" },
+  { run_id = "mix", workflow = "Mix" },
+}
+local kept = core.reaper_runs(mixed)
+check("keeps REAPER runs", #kept, 2)
+check("keeps first", kept[1].run_id, "song")
+check("keeps second", kept[2].run_id, "mix")
+check("no runs to filter", #core.reaper_runs(nil), 0)
+
 -- decisions
 local gate, step = w[1].stage, w[2].stage
 local m, p, b = core.decision(gate, "approve")

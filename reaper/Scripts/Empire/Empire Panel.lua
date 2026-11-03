@@ -1,6 +1,6 @@
 -- Empire Panel
--- Shows what on the Empire board is waiting for you and relays approve, comment
--- or deny. The board stays the source of truth; the panel only reads it and
+-- Shows which REAPER runs on the Empire board are waiting for you and relays
+-- approve, comment or deny. The board stays the source of truth; the panel only reads it and
 -- sends what the dashboard's buttons send. Board requests run in the background
 -- (empire_panel/http.sh), so REAPER never waits on the network.
 --
@@ -81,7 +81,7 @@ local confirm = nil -- "approve" | "deny" while asking to confirm
 local message = nil
 local last_poll = -1e9
 local last_check = 0
-local stats = { frames = 0, worst = 0, stalls = 0, spawn = 0, http = 0, parse = 0, bytes = 0, polls = 0 }
+local stats = { frames = 0, worst = 0, stalls = 0, busy = 0, spawn = 0, http = 0, parse = 0, bytes = 0, polls = 0 }
 local last_frame = nil
 local last_log = R.time_precise()
 
@@ -103,7 +103,8 @@ local function poll()
       board.ok, board.error = false, "bad reply: " .. tostring(data)
       return
     end
-    runs, waiting = data.runs or {}, core.waiting(data.runs)
+    runs = core.reaper_runs(data.runs)
+    waiting = core.waiting(runs)
     board.ok, board.error, board.at = true, nil, R.time_precise()
   end)
 end
@@ -163,10 +164,10 @@ local function track_frame()
   end
   last_frame = now
   if now - last_log >= LOG_SECONDS then
-    log(string.format("frames=%d worst_gap=%.0fms stalls=%d spawn=%.1fms http=%.0fms parse=%.1fms bytes=%d polls=%d board=%s",
-      stats.frames, stats.worst * 1000, stats.stalls, stats.spawn * 1000, stats.http * 1000,
+    log(string.format("frames=%d worst_gap=%.0fms stalls=%d busy=%.1fms spawn=%.1fms http=%.0fms parse=%.1fms bytes=%d polls=%d board=%s",
+      stats.frames, stats.worst * 1000, stats.stalls, stats.busy * 1000, stats.spawn * 1000, stats.http * 1000,
       stats.parse * 1000, stats.bytes, stats.polls, board.ok and "ok" or tostring(board.error)))
-    stats = { frames = 0, worst = 0, stalls = 0, spawn = 0, http = 0, parse = 0, bytes = stats.bytes, polls = 0 }
+    stats = { frames = 0, worst = 0, stalls = 0, busy = 0, spawn = 0, http = 0, parse = 0, bytes = stats.bytes, polls = 0 }
     last_log = now
   end
 end
@@ -249,6 +250,7 @@ local function draw_runs()
 end
 
 local function frame()
+  local started = R.time_precise()
   track_frame()
   collect_replies()
   if R.time_precise() - last_poll >= POLL_SECONDS then poll() end
@@ -262,6 +264,7 @@ local function frame()
     draw_runs()
     ImGui.End(ctx)
   end
+  stats.busy = math.max(stats.busy, R.time_precise() - started)
   if open then
     R.defer(frame)
   else

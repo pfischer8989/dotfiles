@@ -128,6 +128,25 @@ local function url_encode(s)
   return (s:gsub("[^%w%-_.~]", function(c) return string.format("%%%02X", c:byte()) end))
 end
 
+-- The workflows that happen in REAPER; the panel ignores every other run.
+-- "Panel Test" is the throwaway run from test_run.sh.
+core.REAPER_WORKFLOWS = {
+  ["Song Construction"] = true,
+  ["Arrangement"] = true,
+  ["Mix"] = true,
+  ["Master"] = true,
+  ["Publish"] = true,
+  ["Panel Test"] = true,
+}
+
+function core.reaper_runs(runs)
+  local out = {}
+  for _, run in ipairs(runs or {}) do
+    if core.REAPER_WORKFLOWS[run.workflow] then out[#out + 1] = run end
+  end
+  return out
+end
+
 -- A stage is waiting when the dashboard would offer it to a person: the same
 -- test as `needs` in the dashboard's index.html.
 function core.is_waiting(stage)

@@ -17,8 +17,8 @@ ln -sfn ~/dotfiles/reaper/Scripts/Empire ~/Library/Application\ Support/REAPER/S
 - **Empire Test Templates**: inserts every template into a fresh Empire Song
   and writes `Empire-test.log` in the REAPER resource folder.
 
-- **Empire Panel** (test bed): shows what on the Empire board is waiting for
-  you and relays approve, comment or deny from inside REAPER. Needs ReaImGui
+- **Empire Panel** (test bed): shows which REAPER runs on the Empire board are
+  waiting for you and relays approve, comment or deny from inside REAPER. Needs ReaImGui
   and a board key in `~/.empire/reaper-panel.env`
   (`EMPIRE_PANEL_KEY=...`, chmod 600). Timings go to
   `~/.empire/reaper/panel/panel.log`. `empire_panel/test_run.sh create` puts a
