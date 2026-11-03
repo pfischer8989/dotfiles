@@ -85,6 +85,29 @@ _, p = core.decision({ id = "a b/c" }, "accept")
 check("id is url-encoded", p, "/api/tasks/a%20b%2Fc/complete")
 check("unknown action", (core.decision(gate, "explode")), nil)
 
+-- options
+check("options dir", core.options_dir("/r", "run", "gate", 2), "/r/run/gate/pass-2")
+local good = { schema = "empire.notes/v1", ppq = 960, part = "chords",
+               notes = { { 0, 60, 0, 960, 100 }, { 3840, 64, 0, 480, 90 } } }
+check("good notes", core.check_notes(good), good)
+check("rounds up to a bar", core.notes_end(good), 7680)
+good.notes[2] = { 3360, 64, 0, 480, 90 }
+check("exact bar", core.notes_end(good), 3840)
+local function bad_notes(change)
+  local doc = { schema = "empire.notes/v1", ppq = 960, part = "chords", notes = { { 0, 60, 0, 960, 100 } } }
+  change(doc)
+  return (core.check_notes(doc))
+end
+check("wrong schema", bad_notes(function(d) d.schema = "x" end), nil)
+check("wrong ppq", bad_notes(function(d) d.ppq = 480 end), nil)
+check("no part", bad_notes(function(d) d.part = nil end), nil)
+check("no notes", bad_notes(function(d) d.notes = {} end), nil)
+check("float tick", bad_notes(function(d) d.notes[1][1] = 0.5 end), nil)
+check("pitch range", bad_notes(function(d) d.notes[1][2] = 128 end), nil)
+check("zero length", bad_notes(function(d) d.notes[1][4] = 0 end), nil)
+check("short note", bad_notes(function(d) d.notes[1] = { 0, 60, 0 } end), nil)
+check("not a table", (core.check_notes("x")), nil)
+
 -- replies
 local status, body = core.parse_reply('200\n{"ok":\ntrue}')
 check("reply status", status, 200); check("reply body", body, '{"ok":\ntrue}')

@@ -18,6 +18,7 @@ end
 
 package.path = R.ImGui_GetBuiltinPath() .. "/?.lua;" .. HERE .. "/empire_panel/?.lua;" .. package.path
 local ImGui = require("imgui")("0.9")
+if R.set_action_options then R.set_action_options(1) end -- rerunning replaces the old panel, no dialog
 local core = require("core")
 
 local BOARD = os.getenv("EMPIRE_BOARD_URL") or "https://empire.catdevtech.net"
@@ -25,6 +26,7 @@ local HOME = os.getenv("HOME")
 local DIR = HOME .. "/.empire/reaper/panel"
 local LOG = DIR .. "/panel.log"
 local HTTP = HERE .. "/empire_panel/http.sh"
+local RUNS = HOME .. "/.empire/reaper/runs"
 local POLL_SECONDS = 10
 local LOG_SECONDS = 60
 local CHECK_SECONDS = 0.1 -- how often to look for a finished request
@@ -173,6 +175,116 @@ local function track_frame()
   end
 end
 
+-- MIDI options --------------------------------------------------------------
+
+local function read_file(path)
+  local f = io.open(path, "r")
+  if not f then return nil end
+  local text = f:read("a")
+  f:close()
+  return text
+end
+
+-- The option files for a stage's current pass, in name order.
+local function option_files(run_id, stage)
+  local dir = core.options_dir(RUNS, run_id, stage.stage or stage.id, stage.round or 1)
+  local names, i = {}, 0
+  R.EnumerateFiles(dir, -1) -- drop REAPER's cached listing
+  while true do
+    local name = R.EnumerateFiles(dir, i)
+    if not name then break end
+    if name:match("%.notes%.json$") then names[#names + 1] = name end
+    i = i + 1
+  end
+  table.sort(names)
+  return dir, names
+end
+
+local function read_options(dir, names)
+  local docs = {}
+  for _, name in ipairs(names) do
+    local ok, doc = pcall(core.json_decode, read_file(dir .. "/" .. name) or "")
+    if not ok then return nil, name .. ": " .. tostring(doc) end
+    local checked, err = core.check_notes(doc)
+    if not checked then return nil, name .. ": " .. err end
+    docs[#docs + 1] = doc
+  end
+  return docs
+end
+
+local function find_load(tag)
+  for i = 0, R.CountTracks(0) - 1 do
+    local track = R.GetTrack(0, i)
+    local _, got = R.GetSetMediaTrackInfo_String(track, "P_EXT:empire_load", "", false)
+    if got == tag then return track end
+  end
+  return nil
+end
+
+local function insert_option(track, lane, doc)
+  local last_qn = core.notes_end(doc) / doc.ppq
+  local item = R.CreateNewMIDIItemInProj(track, 0, last_qn, true)
+  R.SetMediaItemInfo_Value(item, "I_FIXEDLANE", lane)
+  local take = R.GetActiveTake(item)
+  for _, n in ipairs(doc.notes) do
+    local on = R.MIDI_GetPPQPosFromProjQN(take, n[1] / doc.ppq)
+    local off = R.MIDI_GetPPQPosFromProjQN(take, (n[1] + n[4]) / doc.ppq)
+    R.MIDI_InsertNote(take, false, false, on, off, n[3], n[2], n[5], true)
+  end
+  R.MIDI_Sort(take)
+end
+
+-- Puts a pass's options on one new track, one fixed lane each, with only the
+-- first playing. An earlier pass of the stage stays in the project, muted.
+local function load_options(item)
+  local stage = item.stage
+  local round = stage.round or 1
+  local dir, names = option_files(item.run.run_id, stage)
+  local docs, err = read_options(dir, names)
+  if not docs then
+    message = "Can't load: " .. err
+    return
+  end
+  if #docs == 0 then
+    message = "No MIDI for this pass yet"
+    return
+  end
+  local base = item.run.run_id .. "/" .. (stage.stage or stage.id) .. "/"
+  if find_load(base .. round) then
+    message = "This pass is already in the project"
+    return
+  end
+
+  R.Undo_BeginBlock()
+  R.PreventUIRefresh(1)
+  for i = 0, R.CountTracks(0) - 1 do
+    local track = R.GetTrack(0, i)
+    local _, got = R.GetSetMediaTrackInfo_String(track, "P_EXT:empire_load", "", false)
+    if got:sub(1, #base) == base then R.SetMediaTrackInfo_Value(track, "B_MUTE", 1) end
+  end
+  local index = R.CountTracks(0)
+  R.InsertTrackAtIndex(index, true)
+  local track = R.GetTrack(0, index)
+  R.GetSetMediaTrackInfo_String(track, "P_NAME", string.format("%s (pass %d)", docs[1].part, round), true)
+  R.GetSetMediaTrackInfo_String(track, "P_EXT:empire_load", base .. round, true)
+  R.SetMediaTrackInfo_Value(track, "I_FREEMODE", 2)
+  R.SetMediaTrackInfo_Value(track, "I_NUMFIXEDLANES", #docs)
+  R.TrackFX_AddByName(track, "ReaSynth", false, -1)
+  for i, doc in ipairs(docs) do
+    local lane = i - 1
+    insert_option(track, lane, doc)
+    local label = doc.label and (": " .. doc.label) or ""
+    R.GetSetMediaTrackInfo_String(track, "P_LANENAME:" .. lane, string.char(64 + i) .. label, true)
+  end
+  R.SetMediaTrackInfo_Value(track, "C_LANEPLAYS:0", 1)
+  R.PreventUIRefresh(-1)
+  R.TrackList_AdjustWindows(false)
+  R.UpdateArrange()
+  R.Undo_EndBlock("Empire: load " .. docs[1].part .. " pass " .. round, -1)
+  message = string.format("Loaded %d options onto '%s (pass %d)'", #docs, docs[1].part, round)
+  log(string.format("loaded %s pass %d: %d options", stage.id, round, #docs))
+end
+
 -- Interface -----------------------------------------------------------------
 
 local ctx = ImGui.CreateContext("Empire Panel")
@@ -212,6 +324,8 @@ local function draw_decision()
   local s = item.stage
   ImGui.SeparatorText(ctx, s.title or s.id)
   if s.loop_note then ImGui.TextWrapped(ctx, "Last note: " .. s.loop_note) end
+
+  if ImGui.Button(ctx, "Load MIDI into this project") then load_options(item) end
 
   ImGui.BeginDisabled(ctx, has_inflight("decide"))
   if mode == "another_pass" then

@@ -22,7 +22,10 @@ ln -sfn ~/dotfiles/reaper/Scripts/Empire ~/Library/Application\ Support/REAPER/S
   and a board key in `~/.empire/reaper-panel.env`
   (`EMPIRE_PANEL_KEY=...`, chmod 600). Timings go to
   `~/.empire/reaper/panel/panel.log`. `empire_panel/test_run.sh create` puts a
-  throwaway run on the board to try it on; `remove` deletes it.
+  throwaway run on the board with test chords to try it on; `options N` writes
+  chords for pass N, `reset` starts over and `remove` deletes it. **Load MIDI**
+  puts a pass's options from `~/.empire/reaper/runs/<run>/<stage>/pass-<N>/`
+  on a new track, one fixed lane each.
   Tests: `lua5.4 empire_panel/test_core.lua` from `Scripts/Empire`.
 - **Empire Lane Test**: can a script put MIDI on fixed item lanes? Opens a new
   tab and writes `~/.empire/reaper/lane-test.log`. Close the tab without saving.

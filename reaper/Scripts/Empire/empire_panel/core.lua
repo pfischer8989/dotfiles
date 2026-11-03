@@ -188,6 +188,44 @@ function core.decision(stage, action, note)
   return nil, "unknown action " .. tostring(action)
 end
 
+-- Options -------------------------------------------------------------------
+
+-- Where a stage's MIDI options for a pass sit on this machine: one
+-- <part>-<option>.notes.json per option.
+function core.options_dir(root, run_id, stage, round)
+  return string.format("%s/%s/%s/pass-%d", root, run_id, stage, round)
+end
+
+-- Checks one empire.notes/v1 document. Each note is [start, pitch, channel,
+-- length, velocity] in integer ticks at 960 per quarter note, from song start.
+-- Returns the document or nil and a message.
+function core.check_notes(doc)
+  if type(doc) ~= "table" or doc.schema ~= "empire.notes/v1" then
+    return nil, "not an empire.notes/v1 file"
+  end
+  if doc.ppq ~= 960 then return nil, "ppq must be 960" end
+  if type(doc.part) ~= "string" or doc.part == "" then return nil, "no part name" end
+  if type(doc.notes) ~= "table" or #doc.notes == 0 then return nil, "no notes" end
+  for i, n in ipairs(doc.notes) do
+    local s, p, c, l, v = n[1], n[2], n[3], n[4], n[5]
+    for _, x in ipairs({ s, p, c, l, v }) do
+      if math.type(x) ~= "integer" then return nil, "note " .. i .. " is not 5 integers" end
+    end
+    if #n ~= 5 or s < 0 or p > 127 or p < 0 or c < 0 or c > 15 or l <= 0 or v < 1 or v > 127 then
+      return nil, "note " .. i .. " is out of range"
+    end
+  end
+  return doc
+end
+
+-- The end of the last note, rounded up to a whole 4/4 bar, in ticks.
+function core.notes_end(doc)
+  local last = 0
+  for _, n in ipairs(doc.notes) do last = math.max(last, n[1] + n[4]) end
+  local bar = doc.ppq * 4
+  return math.ceil(last / bar) * bar
+end
+
 -- http.sh writes the HTTP status on the first line and the body after it.
 function core.parse_reply(text)
   local status, body = text:match("^(%d+)\n(.*)$")
