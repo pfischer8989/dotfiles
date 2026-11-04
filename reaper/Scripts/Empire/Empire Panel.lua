@@ -19,7 +19,7 @@ end
 
 package.path = R.ImGui_GetBuiltinPath() .. "/?.lua;" .. HERE .. "/empire_panel/?.lua;" .. package.path
 local ImGui = require("imgui")("0.9")
-if R.set_action_options then R.set_action_options(1) end -- rerunning replaces the old panel, no dialog
+if R.set_action_options then R.set_action_options(1 | 2) end -- rerunning replaces the old panel: stop it, then start again
 local core = require("core")
 
 local BOARD = os.getenv("EMPIRE_BOARD_URL") or "https://empire.catdevtech.net"
