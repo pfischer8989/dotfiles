@@ -108,6 +108,53 @@ check("zero length", bad_notes(function(d) d.notes[1][4] = 0 end), nil)
 check("short note", bad_notes(function(d) d.notes[1] = { 0, 60, 0 } end), nil)
 check("not a table", (core.check_notes("x")), nil)
 
+-- encoding
+check("encode number", core.json_encode(142.0), "142")
+check("encode float", core.json_encode(142.5), "142.5")
+check("encode empty array", core.json_encode({}), "[]")
+check("encode nested", core.json_encode({ b = { 1, "x" }, a = { c = true } }), '{"a":{"c":true},"b":[1,"x"]}')
+
+-- setup
+local function setup_doc()
+  return { schema = "empire.setup/v1", tempo = 142, time_signature = { 4, 4 }, key = "F#", scale = "minor",
+           sections = { { name = "Intro", bars = 16 }, { name = "Drop", bars = 32 }, { name = "Outro", bars = 80 } },
+           tracks = { "Atlas Kit", "Pad - Diva" } }
+end
+check("good setup", core.check_setup(setup_doc()) ~= nil, true)
+local function bad_setup(change)
+  local doc = setup_doc()
+  change(doc)
+  return (core.check_setup(doc))
+end
+check("setup schema", bad_setup(function(d) d.schema = "x" end), nil)
+check("setup tempo", bad_setup(function(d) d.tempo = 0 end), nil)
+check("setup denominator", bad_setup(function(d) d.time_signature = { 4, 3 } end), nil)
+check("setup numerator", bad_setup(function(d) d.time_signature = { 0, 4 } end), nil)
+check("setup key", bad_setup(function(d) d.key = "H" end), nil)
+check("setup scale", bad_setup(function(d) d.scale = "klingon" end), nil)
+check("setup no sections", bad_setup(function(d) d.sections = {} end), nil)
+check("setup whole bars", bad_setup(function(d) d.sections[1].bars = 1.5 end), nil)
+check("setup track name", bad_setup(function(d) d.tracks = { "" } end), nil)
+check("setup no tracks is fine", core.check_setup((function() local d = setup_doc(); d.tracks = {}; return d end)()) ~= nil, true)
+local starts, total = core.section_bars(setup_doc())
+check("first section", starts[1], 0); check("second section", starts[2], 16); check("third section", starts[3], 48)
+check("song bars", total, 128)
+local summary = core.setup_summary(setup_doc())
+check("summary line 1", summary[1], "Tempo 142   4/4   F# minor")
+check("summary line 2", summary[2], "Intro 16, Drop 32, Outro 80 (128 bars, about 3:36)")
+check("summary line 3", summary[3], "Tracks: Atlas Kit, Pad - Diva")
+local action, root = core.key_action("F#")
+check("F# action", action, 43508); check("F# root", root, 6)
+action, root = core.key_action("Cb")
+check("Cb action", action, 43517); check("Cb root", root, 11)
+action, root = core.key_action("Bb")
+check("Bb action", action, 43515); check("Bb root", root, 10)
+check("unknown key action", core.key_action("H"), nil)
+check("notes from nothing", core.notes_with_key("", "A", "minor"), "Key: A\nScale: minor")
+check("notes keep the rest", core.notes_with_key("Key: C\nScale: major\nmy idea\n", "A", "dorian"), "Key: A\nScale: dorian\nmy idea")
+check("setup file", core.setup_file("/r", "run", "setup", 2), "/r/run/setup/pass-2/setup.json")
+check("accepted file", core.accepted_setup_file("/r", "run", "setup"), "/r/run/setup/accepted-setup.json")
+
 -- replies
 local status, body = core.parse_reply('200\n{"ok":\ntrue}')
 check("reply status", status, 200); check("reply body", body, '{"ok":\ntrue}')

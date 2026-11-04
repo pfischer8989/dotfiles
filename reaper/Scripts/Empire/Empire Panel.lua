@@ -3,6 +3,7 @@
 -- same Accept and Another pass as the dashboard. The board stays the source of truth; the panel only reads it and
 -- sends what the dashboard's buttons send. Board requests run in the background
 -- (empire_panel/http.sh), so REAPER never waits on the network.
+-- It also sets up a project from a stage's setup.json and loads a stage's MIDI.
 --
 -- Needs ReaImGui (ReaPack: ReaTeam Extensions) and a board key in
 -- ~/.empire/reaper-panel.env. Writes timings to ~/.empire/reaper/panel/panel.log.
@@ -27,6 +28,11 @@ local DIR = HOME .. "/.empire/reaper/panel"
 local LOG = DIR .. "/panel.log"
 local HTTP = HERE .. "/empire_panel/http.sh"
 local RUNS = HOME .. "/.empire/reaper/runs"
+local RESOURCES = R.GetResourcePath()
+local SONG_TEMPLATE = RESOURCES .. "/ProjectTemplates/Empire Song.RPP"
+local TRACK_TEMPLATES = RESOURCES .. "/TrackTemplates/Empire"
+local KEY_ITEMS = table.concat(core.KEYS, "\0") .. "\0"
+local SCALE_ITEMS = table.concat(core.SCALES, "\0") .. "\0"
 local POLL_SECONDS = 10
 local LOG_SECONDS = 60
 local CHECK_SECONDS = 0.1 -- how often to look for a finished request
@@ -285,6 +291,181 @@ local function load_options(item)
   log(string.format("loaded %s pass %d: %d options", stage.id, round, #docs))
 end
 
+-- Project setup -------------------------------------------------------------
+
+local setup_cache = {}
+
+-- The setup file for a stage's current pass, if the agent has written one.
+-- Looked up at most every 2 s, because the panel asks on every frame.
+local function stage_setup(item)
+  local stage = item.stage
+  local file = core.setup_file(RUNS, item.run.run_id, stage.stage or stage.id, stage.round or 1)
+  local now = R.time_precise()
+  if setup_cache.file == file and now - setup_cache.at < 2 then return setup_cache.doc, setup_cache.err end
+  local doc, err = nil, nil
+  local text = read_file(file)
+  if text then
+    local ok, decoded = pcall(core.json_decode, text)
+    if ok then doc, err = core.check_setup(decoded) else err = tostring(decoded) end
+  end
+  setup_cache = { file = file, at = now, doc = doc, err = err }
+  return doc, err
+end
+
+local function setup_tag(item)
+  local stage = item.stage
+  return item.run.run_id .. "/" .. (stage.stage or stage.id) .. "/" .. (stage.round or 1)
+end
+
+local function project_value(key)
+  local _, value = R.GetProjExtState(0, "empire", key)
+  return value
+end
+
+-- Scripts can only set the MIDI editor's root, through its key snap action,
+-- and that needs an editor open. Uses the open one, or opens one on a throwaway
+-- item and closes it again. Returns whether REAPER reports the new root.
+local function set_midi_root(key)
+  local action, root = core.key_action(key)
+  local index = R.CountTracks(0)
+  R.InsertTrackAtIndex(index, false)
+  local track = R.GetTrack(0, index)
+  local item = R.CreateNewMIDIItemInProj(track, 0, 1, true)
+  local take = R.GetActiveTake(item)
+  local selected = {}
+  for i = 0, R.CountSelectedMediaItems(0) - 1 do selected[#selected + 1] = R.GetSelectedMediaItem(0, i) end
+
+  local editor = R.MIDIEditor_GetActive()
+  local opened = false
+  if not editor then
+    R.SelectAllMediaItems(0, false)
+    R.SetMediaItemSelected(item, true)
+    R.Main_OnCommand(40153, 0) -- open in the built-in MIDI editor
+    editor = R.MIDIEditor_GetActive()
+    opened = editor ~= nil
+  end
+  local got = nil
+  if editor then
+    R.MIDIEditor_OnCommand(editor, action)
+    got = R.MIDIEditor_GetSetting_int(editor, "scale_root")
+    if opened then R.MIDIEditor_OnCommand(editor, 2) end -- close it
+  end
+
+  R.DeleteTrack(track)
+  R.SelectAllMediaItems(0, false)
+  for _, it in ipairs(selected) do R.SetMediaItemSelected(it, true) end
+  R.UpdateArrange()
+  return got == root
+end
+
+-- The key and scale live in the project; the notes show them to a person.
+local function set_key(key, scale)
+  R.SetProjExtState(0, "empire", "key", key)
+  R.SetProjExtState(0, "empire", "scale", scale)
+  R.GetSetProjectNotes(0, true, core.notes_with_key(R.GetSetProjectNotes(0, false, ""), key, scale))
+  local ok = set_midi_root(key)
+  log(string.format("key %s %s, midi root %s", key, scale, ok and "set" or "not set"))
+  return ok
+end
+
+local function project_is_empty()
+  return R.CountTracks(0) == 0 and R.CountProjectMarkers(0) == 0
+end
+
+-- Builds the project a setup file describes: Empire Song, tempo, time
+-- signature, a marker per section and the tracks through Empire Insert Track.
+-- Anything already in this tab stays there, because a used tab gets a new tab.
+local function set_up_project(item, doc)
+  local tag = setup_tag(item)
+  if project_value("setup") == tag then
+    message = "This tab is already set up from this pass"
+    return
+  end
+  if not R.file_exists(SONG_TEMPLATE) then
+    message = "Can't set up: run Empire Build Templates first"
+    return
+  end
+  for _, name in ipairs(doc.tracks) do
+    if not R.file_exists(TRACK_TEMPLATES .. "/" .. name .. ".RTrackTemplate") then
+      message = "Can't set up: no track template called " .. name
+      return
+    end
+  end
+
+  if not project_is_empty() then R.Main_OnCommand(40859, 0) end -- new project tab
+  R.Main_openProject("template:noprompt:" .. SONG_TEMPLATE)
+
+  R.Undo_BeginBlock()
+  local ts = doc.time_signature
+  local marker = R.CountTempoTimeSigMarkers(0) > 0 and 0 or -1
+  R.SetTempoTimeSigMarker(0, marker, 0, -1, -1, doc.tempo, ts[1], ts[2], false)
+  R.UpdateTimeline()
+  local starts, total = core.section_bars(doc)
+  for i, section in ipairs(doc.sections) do
+    R.AddProjectMarker2(0, false, R.TimeMap2_beatsToTime(0, 0, starts[i]), 0, section.name, -1, 0)
+  end
+  R.AddProjectMarker2(0, false, R.TimeMap2_beatsToTime(0, 0, total), 0, "End", -1, 0)
+  R.Undo_EndBlock("Empire: tempo, time signature and markers", -1)
+
+  for _, name in ipairs(doc.tracks) do
+    R.SetExtState("Empire", "insert", name, false)
+    dofile(HERE .. "/Empire Insert Track.lua")
+  end
+
+  local root_ok = set_key(doc.key, doc.scale)
+  R.SetProjExtState(0, "empire", "setup", tag)
+  R.SetEditCurPos(0, true, false)
+  R.UpdateTimeline()
+  message = root_ok and "Project set up. Now pick the scale in the MIDI editor."
+    or "Project set up, but the MIDI editor's root didn't change."
+  log(string.format("set up %s: %d tracks, %d markers", tag, #doc.tracks, #doc.sections + 1))
+end
+
+-- What the project holds now, which is what later stages build on: my changes
+-- count, not the proposal.
+local function read_project()
+  local num, den, tempo = R.TimeMap_GetTimeSigAtTime(0, 0)
+  local markers, tracks = {}, {}
+  local i = 0
+  while true do
+    local more, is_region, pos, _, name = R.EnumProjectMarkers3(0, i)
+    if more == 0 then break end
+    if not is_region then
+      local _, bar = R.TimeMap2_timeToBeats(0, pos)
+      markers[#markers + 1] = { name = name, bar = bar + 1 }
+    end
+    i = i + 1
+  end
+  for t = 0, R.CountTracks(0) - 1 do
+    local _, name = R.GetSetMediaTrackInfo_String(R.GetTrack(0, t), "P_NAME", "", false)
+    tracks[#tracks + 1] = name
+  end
+  return { schema = "empire.setup.accepted/v1", tempo = tempo, time_signature = { num, den },
+           key = project_value("key"), scale = project_value("scale"), markers = markers, tracks = tracks }
+end
+
+-- Saves the project's setup for later stages. A setup stage can only be
+-- accepted from its own tab, so that nothing else gets recorded as the song.
+local function record_setup(item)
+  local prefix = item.run.run_id .. "/" .. (item.stage.stage or item.stage.id) .. "/"
+  if project_value("setup"):sub(1, #prefix) ~= prefix then
+    message = "Switch to the tab this stage set up, then Accept"
+    return false
+  end
+  local file = core.accepted_setup_file(RUNS, item.run.run_id, item.stage.stage or item.stage.id)
+  local tmp = file .. ".tmp"
+  local f = io.open(tmp, "w")
+  if not f then
+    message = "Can't write " .. file
+    return false
+  end
+  f:write(core.json_encode(read_project()), "\n")
+  f:close()
+  os.rename(tmp, file)
+  log("recorded setup " .. file)
+  return true
+end
+
 -- Interface -----------------------------------------------------------------
 
 local ctx = ImGui.CreateContext("Empire Panel")
@@ -306,6 +487,21 @@ local function draw_status()
   if message then ImGui.TextColored(ctx, AMBER, message) end
 end
 
+local function draw_project()
+  local key, scale = project_value("key"), project_value("scale")
+  if key == "" then return end
+  ImGui.SeparatorText(ctx, "This project")
+  ImGui.SetNextItemWidth(ctx, 70)
+  local key_changed, key_index = ImGui.Combo(ctx, "Key", (core.index_of(core.KEYS, key) or 1) - 1, KEY_ITEMS)
+  ImGui.SameLine(ctx)
+  ImGui.SetNextItemWidth(ctx, 170)
+  local scale_changed, scale_index = ImGui.Combo(ctx, "Scale", (core.index_of(core.SCALES, scale) or 1) - 1, SCALE_ITEMS)
+  if key_changed or scale_changed then
+    set_key(core.KEYS[key_index + 1], core.SCALES[scale_index + 1])
+  end
+  ImGui.TextColored(ctx, DIM, "REAPER won't let scripts set the scale: pick it in the MIDI editor too.")
+end
+
 local function draw_waiting()
   ImGui.SeparatorText(ctx, string.format("Waiting for you (%d)", #waiting))
   if #waiting == 0 then ImGui.TextColored(ctx, DIM, "Nothing right now.") end
@@ -325,7 +521,14 @@ local function draw_decision()
   ImGui.SeparatorText(ctx, s.title or s.id)
   if s.loop_note then ImGui.TextWrapped(ctx, "Last note: " .. s.loop_note) end
 
-  if ImGui.Button(ctx, "Load MIDI into this project") then load_options(item) end
+  local setup, setup_err = stage_setup(item)
+  if setup_err then ImGui.TextColored(ctx, RED, "Setup file: " .. setup_err) end
+  if setup then
+    for _, line in ipairs(core.setup_summary(setup)) do ImGui.TextWrapped(ctx, line) end
+    if ImGui.Button(ctx, "Set up this project") then set_up_project(item, setup) end
+  elseif not setup_err then
+    if ImGui.Button(ctx, "Load MIDI into this project") then load_options(item) end
+  end
 
   ImGui.BeginDisabled(ctx, has_inflight("decide"))
   if mode == "another_pass" then
@@ -346,7 +549,7 @@ local function draw_decision()
     local word = core.is_review(s) and "Accept" or "Finish"
     ImGui.TextColored(ctx, AMBER, word .. " " .. (s.stage or s.id) .. "?")
     if ImGui.Button(ctx, "Yes") then
-      decide(item, "accept")
+      if not setup or record_setup(item) then decide(item, "accept") end
       mode = nil
     end
     ImGui.SameLine(ctx)
@@ -381,10 +584,11 @@ local function frame()
   collect_replies()
   if R.time_precise() - last_poll >= POLL_SECONDS then poll() end
 
-  ImGui.SetNextWindowSize(ctx, 420, 520, ImGui.Cond_FirstUseEver)
+  ImGui.SetNextWindowSize(ctx, 460, 560, ImGui.Cond_FirstUseEver)
   local visible, open = ImGui.Begin(ctx, "Empire", true)
   if visible then
     draw_status()
+    draw_project()
     draw_waiting()
     draw_decision()
     draw_runs()
