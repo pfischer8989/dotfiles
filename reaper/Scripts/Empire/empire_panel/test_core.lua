@@ -179,6 +179,19 @@ check("lane A", core.option_lane("A", 3), 0); check("lane C", core.option_lane("
 check("first bar of second section", core.sketch_section(8, 8, 6), 2)
 check("end of first section", core.sketch_section(7, 8, 6), 1)
 check("past the end", core.sketch_section(99, 8, 6), 6)
+local launched = core.launch_mutes({
+  { track = "a", section = 1, selected = false }, { track = "a", section = 1, selected = true },
+  { track = "a", section = 2, selected = false }, { track = "a", section = 2, selected = false },
+  { track = "b", section = 1, selected = false },
+})
+check("launch unmutes the click", launched[2], false)
+check("launch mutes its cell", launched[1], true)
+check("launch leaves other sections", launched[3], nil)
+check("launch leaves other tracks", launched[5], nil)
+launched = core.launch_mutes({ { track = "a", section = 1, selected = true }, { track = "a", section = 1, selected = true },
+                               { track = "a", section = 1, selected = false } })
+check("layer first", launched[1], false); check("layer second", launched[2], false); check("layer others", launched[3], true)
+check("nothing selected", next(core.launch_mutes({ { track = "a", section = 1, selected = false } })), nil)
 local lanes, needed = core.master_lanes({ { track = "a", section = 1 }, { track = "a", section = 2 },
                                           { track = "a", section = 2 }, { track = "b", section = 2 } })
 check("first pick", lanes[1], 0); check("other section shares lane 0", lanes[2], 0)

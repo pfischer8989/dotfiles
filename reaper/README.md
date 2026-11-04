@@ -38,11 +38,14 @@ ln -sfn ~/dotfiles/reaper/Scripts/Empire ~/Library/Application\ Support/REAPER/S
 - **Empire Build Sketch**: builds an idea board from a sketch file named by
   `~/.empire/reaper/sketches/latest` (`empire.sketch/v1`): one short loop per
   song section in its own region, a track per part, a fixed lane per option.
-  Loop a section and switch lanes as it plays. **Empire Sketch Next Section** and
-  **Previous Section** move the loop; give them shortcuts.
-- **Empire Build Master**: select the clips you like in the sketch and run it.
-  Makes a master project in a new tab with only those clips looped to full
-  section length, same tracks and plugins, with section markers.
+  **Empire Sketch Next Section** and **Previous Section** move the loop; give
+  them shortcuts.
+- **Empire Sketch Launcher**: the build starts it. Clicking a clip in a sketch
+  plays it for that track and section and mutes the other options there;
+  Cmd-clicking layers. Run it again to stop it.
+- **Empire Build Master**: makes a master project in a new tab from what's
+  playing in the sketch: the unmuted clips looped to full section length, same
+  tracks and plugins, with section markers.
 - `empire_sketch/goa_test.py` writes a goa psytrance test sketch, and **Empire
   Sketch Test** proves the build and master steps with no plugins.
 

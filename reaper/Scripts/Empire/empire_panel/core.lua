@@ -386,6 +386,22 @@ function core.sketch_section(bar, loop_bars, count)
   return math.max(1, math.min(count, bar // loop_bars + 1))
 end
 
+-- A click launches a clip for its own track and section only. clips: { track,
+-- section, selected }. Returns muted by index: false for a selected clip, true
+-- for the others in its cell, and nil for every clip in a cell nothing was
+-- selected in, which stays as it is.
+function core.launch_mutes(clips)
+  local function cell(clip) return tostring(clip.track) .. "/" .. clip.section end
+  local touched, muted = {}, {}
+  for _, clip in ipairs(clips) do
+    if clip.selected then touched[cell(clip)] = true end
+  end
+  for i, clip in ipairs(clips) do
+    if touched[cell(clip)] then muted[i] = not clip.selected end
+  end
+  return muted
+end
+
 -- Which fixed lane each picked clip goes on in the master, so that layered
 -- picks on one track and section don't overlap. picks: { { track, section } }.
 -- Returns lanes by pick and the most lanes each track needs.

@@ -95,4 +95,24 @@ function project.loop_region(region)
   R.SetEditCurPos2(0, region.start, false, R.GetPlayState() & 1 == 1)
 end
 
+-- Makes the selected clips of a sketch play in their own track and section,
+-- and mutes the other options there. Nothing else changes.
+function project.launch_selected()
+  local loop_bars, sections = tonumber(project.value("loop_bars")), tonumber(project.value("sections"))
+  if not loop_bars or not sections then return end
+  local items, clips = {}, {}
+  for i = 0, R.CountMediaItems(0) - 1 do
+    local item = R.GetMediaItem(0, i)
+    local _, bar = R.TimeMap2_timeToBeats(0, R.GetMediaItemInfo_Value(item, "D_POSITION"))
+    items[#items + 1] = item
+    clips[#clips + 1] = { track = R.GetMediaItemTrack(item), selected = R.IsMediaItemSelected(item),
+                          section = core.sketch_section(bar, loop_bars, sections) }
+  end
+  local muted = core.launch_mutes(clips)
+  for i, item in ipairs(items) do
+    if muted[i] ~= nil then R.SetMediaItemInfo_Value(item, "B_MUTE", muted[i] and 1 or 0) end
+  end
+  R.UpdateArrange()
+end
+
 return project

@@ -1,10 +1,12 @@
 -- Empire Sketch Test
--- Builds empire_sketch/mini.json (no plugins), picks some clips, builds the
+-- Builds empire_sketch/mini.json (no plugins), launches some clips, builds the
 -- master and writes what it finds to ~/.empire/reaper/sketches/sketch-test.log.
 -- Leaves two tabs open; close them without saving.
 
 local R = reaper
 local HERE = ({ R.get_action_context() })[2]:match("^(.*)[/\\]")
+package.path = HERE .. "/empire_panel/?.lua;" .. package.path
+local project = require("project")
 local DIR = os.getenv("HOME") .. "/.empire/reaper/sketches"
 R.RecursiveCreateDirectory(DIR, 0)
 local mini = DIR .. "/mini-test.json"
@@ -55,11 +57,34 @@ local ok, err = xpcall(function()
   start = R.GetSet_LoopTimeRange2(0, false, true, 0, 0, false)
   check("previous section loops Intro", start, 0)
 
-  local want = { ["Intro One B: b"] = true, ["Drop One A: a"] = true, ["Drop One C: c"] = true, ["Drop Two B: b"] = true }
-  for i = 0, R.CountMediaItems(0) - 1 do
-    local item = R.GetMediaItem(0, i)
-    R.SetMediaItemSelected(item, want[take_name(item)] == true)
+  local function find(name)
+    for i = 0, R.CountMediaItems(0) - 1 do
+      local item = R.GetMediaItem(0, i)
+      if take_name(item) == name then return item end
+    end
   end
+  local function mute(name) return R.GetMediaItemInfo_Value(find(name), "B_MUTE") end
+  local function click(...)
+    R.SelectAllMediaItems(0, false)
+    for _, name in ipairs({ ... }) do R.SetMediaItemSelected(find(name), true) end
+    project.launch_selected()
+  end
+
+  check("all lanes play", R.GetMediaTrackInfo_Value(one, "C_ALLLANESPLAY"), 1)
+  check("A starts on", mute("Intro One A: a"), 0)
+  check("B starts muted", mute("Intro One B: b"), 1)
+  click("Intro One B: b")
+  check("click turns B on", mute("Intro One B: b"), 0)
+  check("click turns A off", mute("Intro One A: a"), 1)
+  check("other section keeps A", mute("Drop One A: a"), 0)
+  check("other track keeps A", mute("Drop Two A: a"), 0)
+  click("Drop One A: a", "Drop One C: c")
+  check("layer A", mute("Drop One A: a"), 0)
+  check("layer C", mute("Drop One C: c"), 0)
+  check("layer leaves B off", mute("Drop One B: b"), 1)
+  check("Intro keeps B", mute("Intro One B: b"), 0)
+  click("Drop Two B: b")
+  check("Drop still layered", mute("Drop One C: c"), 0)
   local sketch_proj = R.EnumProjects(-1)
   dofile(HERE .. "/Empire Build Master.lua")
   check("master is a new tab", R.EnumProjects(-1) ~= sketch_proj, true)

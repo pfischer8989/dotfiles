@@ -1,7 +1,7 @@
 -- Empire Build Sketch
 -- Builds an idea board from a sketch file: one short loop per song section, in
 -- its own region, and a track per part with a fixed lane per option. Loop a
--- section and switch lanes as it plays, then select the clips you like and run
+-- section and click clips to launch them (Empire Sketch Launcher), then run
 -- Empire Build Master. Reads the file named by ~/.empire/reaper/sketches/latest.
 
 local R = reaper
@@ -39,6 +39,7 @@ local function insert_clip(track, clip, start_qn, length_qn, ppq, lane)
   R.SetMediaItemInfo_Value(item, "I_FIXEDLANE", lane)
   R.SetMediaItemInfo_Value(item, "B_LOOPSRC", 1)
   R.SetMediaItemInfo_Value(item, "I_CUSTOMCOLOR", COLORS[lane % #COLORS + 1] | 0x1000000)
+  R.SetMediaItemInfo_Value(item, "B_MUTE", lane == 0 and 0 or 1)
   local take = R.GetActiveTake(item)
   for _, n in ipairs(clip.notes) do
     local on = R.MIDI_GetPPQPosFromProjQN(take, start_qn + n[1] / ppq)
@@ -52,10 +53,13 @@ local function insert_clip(track, clip, start_qn, length_qn, ppq, lane)
   R.GetSetMediaItemTakeInfo_String(take, "P_EXT:empire_ids", clip.section .. "/" .. clip.part .. "/" .. clip.option, true)
 end
 
+-- Registers the scripts a sketch uses and starts the launcher if it's stopped.
 local function register_scripts()
   for _, name in ipairs({ "Empire Build Master", "Empire Sketch Next Section", "Empire Sketch Previous Section" }) do
     R.AddRemoveReaScript(true, 0, HERE .. "/" .. name .. ".lua", true)
   end
+  local launcher = R.AddRemoveReaScript(true, 0, HERE .. "/Empire Sketch Launcher.lua", true)
+  if R.GetToggleCommandState(launcher) ~= 1 then R.Main_OnCommand(launcher, 0) end
 end
 
 local function build(path, doc)
@@ -109,8 +113,8 @@ local function build(path, doc)
   for _, track in pairs(tracks) do
     for lane = 0, doc.options - 1 do
       R.GetSetMediaTrackInfo_String(track, "P_LANENAME:" .. lane, string.char(65 + lane), true)
+      R.SetMediaTrackInfo_Value(track, "C_LANEPLAYS:" .. lane, 2) -- every lane plays; item mutes do the choosing
     end
-    R.SetMediaTrackInfo_Value(track, "C_LANEPLAYS:0", 1)
   end
   R.SelectAllMediaItems(0, false)
   R.PreventUIRefresh(-1)
@@ -119,6 +123,8 @@ local function build(path, doc)
   local root_ok = project.set_key(setup.key, setup.scale)
   R.SetProjExtState(0, "empire", "sketch", path)
   R.SetProjExtState(0, "empire", "role", "sketch")
+  R.SetProjExtState(0, "empire", "loop_bars", tostring(doc.loop_bars))
+  R.SetProjExtState(0, "empire", "sections", tostring(#setup.sections))
   local regions = project.regions()
   project.loop_region(regions[1])
   R.GetSet_ArrangeView2(0, true, 0, 0, 0, regions[#regions].stop)

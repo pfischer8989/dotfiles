@@ -1,8 +1,8 @@
 -- Empire Build Master
--- Select the clips you like in an Empire sketch, then run this. Makes a master
--- project in a new tab with only those clips, each looped over its section's
--- full length, on the same tracks and plugins. The sketch isn't changed. Two
--- picks on one track and section are layered on lanes that all play.
+-- Makes a master from what's playing in an Empire sketch: a new tab with only
+-- the unmuted clips, each looped over its section's full length, on the same
+-- tracks and plugins. The sketch isn't changed. Two clips on one track and
+-- section are layered on lanes that all play.
 
 local R = reaper
 local HERE = ({ R.get_action_context() })[2]:match("^(.*)[/\\]")
@@ -28,22 +28,25 @@ local function build()
   if path == "" or project.value("role") ~= "sketch" then
     return say("Switch to the sketch tab first.")
   end
-  if R.CountSelectedMediaItems(0) == 0 then
-    return say("Select the clips you like first.")
+  local playing = 0
+  for i = 0, R.CountMediaItems(0) - 1 do
+    if R.GetMediaItemInfo_Value(R.GetMediaItem(0, i), "B_MUTE") == 0 then playing = playing + 1 end
   end
+  if playing == 0 then return say("Every clip is muted, so there's nothing to build from.") end
   local doc = read_doc(path)
   if not doc then return say("Can't read the sketch file:\n" .. path) end
 
   local master = path:gsub("[^/]+$", "") .. "master-" .. os.date("%Y%m%d-%H%M%S") .. ".RPP"
-  R.Main_SaveProjectEx(0, master, 0) -- a copy; selection and plugin state come along
+  R.Main_SaveProjectEx(0, master, 0) -- a copy; mutes and plugin state come along
   R.Main_OnCommand(40859, 0) -- new project tab
   R.Main_openProject("noprompt:" .. master)
+  R.SetProjExtState(0, "empire", "role", "master") -- the launcher leaves a master alone
 
   R.Undo_BeginBlock()
   R.PreventUIRefresh(1)
   for i = R.CountMediaItems(0) - 1, 0, -1 do
     local item = R.GetMediaItem(0, i)
-    if not R.IsMediaItemSelected(item) then
+    if R.GetMediaItemInfo_Value(item, "B_MUTE") ~= 0 then
       R.DeleteTrackMediaItem(R.GetMediaItemTrack(item), item)
     end
   end
@@ -69,7 +72,7 @@ local function build()
     R.SetMediaItemInfo_Value(item, "I_FIXEDLANE", lanes[i])
   end
 
-  -- every lane track gets the lanes it needs, all playing, or stops using lanes
+  -- a track gets the lanes it needs, all playing, or stops using lanes
   for i = 0, R.CountTracks(0) - 1 do
     local track = R.GetTrack(0, i)
     if R.GetMediaTrackInfo_Value(track, "I_FREEMODE") == 2 then
@@ -95,7 +98,6 @@ local function build()
   R.GetSet_LoopTimeRange2(0, true, true, 0, 0, false)
   R.SetEditCurPos2(0, 0, false, false)
   R.SelectAllMediaItems(0, false)
-  R.SetProjExtState(0, "empire", "role", "master")
   R.GetSet_ArrangeView2(0, true, 0, 0, 0, stop)
   R.PreventUIRefresh(-1)
   R.TrackList_AdjustWindows(false)
