@@ -87,6 +87,9 @@ local function build(path, doc)
     R.SetMediaTrackInfo_Value(track, "I_FREEMODE", 2)
     R.SetMediaTrackInfo_Value(track, "I_NUMFIXEDLANES", doc.options)
     tracks[part.name] = track
+    local fx = R.TrackFX_GetInstrument(track)
+    local _, instrument = R.TrackFX_GetFXName(track, fx, "")
+    write_log(string.format("%s on %s", part.name, fx >= 0 and instrument or "no instrument"))
   end
   local plugins = R.time_precise()
 
