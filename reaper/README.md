@@ -35,5 +35,16 @@ ln -sfn ~/dotfiles/reaper/Scripts/Empire ~/Library/Application\ Support/REAPER/S
 - **Empire Lane Test**: can a script put MIDI on fixed item lanes? Opens a new
   tab and writes `~/.empire/reaper/lane-test.log`. Close the tab without saving.
 
+- **Empire Build Sketch**: builds an idea board from a sketch file named by
+  `~/.empire/reaper/sketches/latest` (`empire.sketch/v1`): one short loop per
+  song section in its own region, a track per part, a fixed lane per option.
+  Loop a section and switch lanes as it plays. **Empire Sketch Next Section** and
+  **Previous Section** move the loop; give them shortcuts.
+- **Empire Build Master**: select the clips you like in the sketch and run it.
+  Makes a master project in a new tab with only those clips looped to full
+  section length, same tracks and plugins, with section markers.
+- `empire_sketch/goa_test.py` writes a goa psytrance test sketch, and **Empire
+  Sketch Test** proves the build and master steps with no plugins.
+
 The full design (buses, returns, templates, send levels) is in the Empire
 repo: `docs/workflows.md`, "REAPER templates".

@@ -155,6 +155,36 @@ check("notes keep the rest", core.notes_with_key("Key: C\nScale: major\nmy idea\
 check("setup file", core.setup_file("/r", "run", "setup", 2), "/r/run/setup/pass-2/setup.json")
 check("accepted file", core.accepted_setup_file("/r", "run", "setup"), "/r/run/setup/accepted-setup.json")
 
+-- sketch
+local function sketch_doc()
+  return { schema = "empire.sketch/v1", ppq = 960, loop_bars = 8, options = 3, setup = setup_doc(),
+           parts = { { name = "Bass", template = "Synth - Hive" } },
+           clips = { { section = "Drop", part = "Bass", option = "B", notes = { { 0, 37, 0, 240, 100 } } } } }
+end
+check("good sketch", core.check_sketch(sketch_doc()) ~= nil, true)
+local function bad_sketch(change)
+  local doc = sketch_doc()
+  change(doc)
+  return (core.check_sketch(doc))
+end
+check("sketch schema", bad_sketch(function(d) d.schema = "x" end), nil)
+check("sketch bad setup", bad_sketch(function(d) d.setup.key = "H" end), nil)
+check("sketch loop", bad_sketch(function(d) d.loop_bars = 0 end), nil)
+check("sketch no parts", bad_sketch(function(d) d.parts = {} end), nil)
+check("sketch unknown section", bad_sketch(function(d) d.clips[1].section = "Nope" end), nil)
+check("sketch unknown part", bad_sketch(function(d) d.clips[1].part = "Nope" end), nil)
+check("sketch option past range", bad_sketch(function(d) d.clips[1].option = "D" end), nil)
+check("sketch bad note", bad_sketch(function(d) d.clips[1].notes = { { 0, 200, 0, 240, 100 } } end), nil)
+check("lane A", core.option_lane("A", 3), 0); check("lane C", core.option_lane("C", 3), 2)
+check("first bar of second section", core.sketch_section(8, 8, 6), 2)
+check("end of first section", core.sketch_section(7, 8, 6), 1)
+check("past the end", core.sketch_section(99, 8, 6), 6)
+local lanes, needed = core.master_lanes({ { track = "a", section = 1 }, { track = "a", section = 2 },
+                                          { track = "a", section = 2 }, { track = "b", section = 2 } })
+check("first pick", lanes[1], 0); check("other section shares lane 0", lanes[2], 0)
+check("layered pick", lanes[3], 1); check("other track", lanes[4], 0)
+check("track a lanes", needed.a, 2); check("track b lanes", needed.b, 1)
+
 -- replies
 local status, body = core.parse_reply('200\n{"ok":\ntrue}')
 check("reply status", status, 200); check("reply body", body, '{"ok":\ntrue}')

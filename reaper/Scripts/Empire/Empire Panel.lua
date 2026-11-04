@@ -21,6 +21,7 @@ package.path = R.ImGui_GetBuiltinPath() .. "/?.lua;" .. HERE .. "/empire_panel/?
 local ImGui = require("imgui")("0.9")
 if R.set_action_options then R.set_action_options(1 | 2) end -- rerunning replaces the old panel: stop it, then start again
 local core = require("core")
+local project = require("project")
 
 local BOARD = os.getenv("EMPIRE_BOARD_URL") or "https://empire.catdevtech.net"
 local HOME = os.getenv("HOME")
@@ -317,59 +318,13 @@ local function setup_tag(item)
   return item.run.run_id .. "/" .. (stage.stage or stage.id) .. "/" .. (stage.round or 1)
 end
 
-local function project_value(key)
-  local _, value = R.GetProjExtState(0, "empire", key)
-  return value
-end
+local project_value = project.value
 
--- Scripts can only set the MIDI editor's root, through its key snap action,
--- and that needs an editor open. Uses the open one, or opens one on a throwaway
--- item and closes it again. Returns whether REAPER reports the new root.
-local function set_midi_root(key)
-  local action, root = core.key_action(key)
-  local index = R.CountTracks(0)
-  R.InsertTrackAtIndex(index, false)
-  local track = R.GetTrack(0, index)
-  local item = R.CreateNewMIDIItemInProj(track, 0, 1, true)
-  local take = R.GetActiveTake(item)
-  local selected = {}
-  for i = 0, R.CountSelectedMediaItems(0) - 1 do selected[#selected + 1] = R.GetSelectedMediaItem(0, i) end
-
-  local editor = R.MIDIEditor_GetActive()
-  local opened = false
-  if not editor then
-    R.SelectAllMediaItems(0, false)
-    R.SetMediaItemSelected(item, true)
-    R.Main_OnCommand(40153, 0) -- open in the built-in MIDI editor
-    editor = R.MIDIEditor_GetActive()
-    opened = editor ~= nil
-  end
-  local got = nil
-  if editor then
-    R.MIDIEditor_OnCommand(editor, action)
-    got = R.MIDIEditor_GetSetting_int(editor, "scale_root")
-    if opened then R.MIDIEditor_OnCommand(editor, 2) end -- close it
-  end
-
-  R.DeleteTrack(track)
-  R.SelectAllMediaItems(0, false)
-  for _, it in ipairs(selected) do R.SetMediaItemSelected(it, true) end
-  R.UpdateArrange()
-  return got == root
-end
-
--- The key and scale live in the project; the notes show them to a person.
+-- The key and scale go in the project and the MIDI editor's root.
 local function set_key(key, scale)
-  R.SetProjExtState(0, "empire", "key", key)
-  R.SetProjExtState(0, "empire", "scale", scale)
-  R.GetSetProjectNotes(0, true, core.notes_with_key(R.GetSetProjectNotes(0, false, ""), key, scale))
-  local ok = set_midi_root(key)
+  local ok = project.set_key(key, scale)
   log(string.format("key %s %s, midi root %s", key, scale, ok and "set" or "not set"))
   return ok
-end
-
-local function project_is_empty()
-  return R.CountTracks(0) == 0 and R.CountProjectMarkers(0) == 0
 end
 
 -- Builds the project a setup file describes: Empire Song, tempo, time
@@ -392,14 +347,11 @@ local function set_up_project(item, doc)
     end
   end
 
-  if not project_is_empty() then R.Main_OnCommand(40859, 0) end -- new project tab
+  if not project.is_empty() then R.Main_OnCommand(40859, 0) end -- new project tab
   R.Main_openProject("template:noprompt:" .. SONG_TEMPLATE)
 
   R.Undo_BeginBlock()
-  local ts = doc.time_signature
-  local marker = R.CountTempoTimeSigMarkers(0) > 0 and 0 or -1
-  R.SetTempoTimeSigMarker(0, marker, 0, -1, -1, doc.tempo, ts[1], ts[2], false)
-  R.UpdateTimeline()
+  project.set_tempo(doc)
   local starts, total = core.section_bars(doc)
   for i, section in ipairs(doc.sections) do
     R.AddProjectMarker2(0, false, R.TimeMap2_beatsToTime(0, 0, starts[i]), 0, section.name, -1, 0)
@@ -407,10 +359,7 @@ local function set_up_project(item, doc)
   R.AddProjectMarker2(0, false, R.TimeMap2_beatsToTime(0, 0, total), 0, "End", -1, 0)
   R.Undo_EndBlock("Empire: tempo, time signature and markers", -1)
 
-  for _, name in ipairs(doc.tracks) do
-    R.SetExtState("Empire", "insert", name, false)
-    dofile(HERE .. "/Empire Insert Track.lua")
-  end
+  for _, name in ipairs(doc.tracks) do project.insert_template(HERE, name) end
 
   local root_ok = set_key(doc.key, doc.scale)
   R.SetProjExtState(0, "empire", "setup", tag)

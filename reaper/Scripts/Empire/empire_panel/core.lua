@@ -212,6 +212,20 @@ function core.options_dir(root, run_id, stage, round)
   return string.format("%s/%s/%s/pass-%d", root, run_id, stage, round)
 end
 
+function core.check_note_list(notes)
+  if type(notes) ~= "table" or #notes == 0 then return nil, "no notes" end
+  for i, n in ipairs(notes) do
+    local s, p, c, l, v = n[1], n[2], n[3], n[4], n[5]
+    for _, x in ipairs({ s, p, c, l, v }) do
+      if math.type(x) ~= "integer" then return nil, "note " .. i .. " is not 5 integers" end
+    end
+    if #n ~= 5 or s < 0 or p > 127 or p < 0 or c < 0 or c > 15 or l <= 0 or v < 1 or v > 127 then
+      return nil, "note " .. i .. " is out of range"
+    end
+  end
+  return notes
+end
+
 -- Checks one empire.notes/v1 document. Each note is [start, pitch, channel,
 -- length, velocity] in integer ticks at 960 per quarter note, from song start.
 -- Returns the document or nil and a message.
@@ -221,16 +235,8 @@ function core.check_notes(doc)
   end
   if doc.ppq ~= 960 then return nil, "ppq must be 960" end
   if type(doc.part) ~= "string" or doc.part == "" then return nil, "no part name" end
-  if type(doc.notes) ~= "table" or #doc.notes == 0 then return nil, "no notes" end
-  for i, n in ipairs(doc.notes) do
-    local s, p, c, l, v = n[1], n[2], n[3], n[4], n[5]
-    for _, x in ipairs({ s, p, c, l, v }) do
-      if math.type(x) ~= "integer" then return nil, "note " .. i .. " is not 5 integers" end
-    end
-    if #n ~= 5 or s < 0 or p > 127 or p < 0 or c < 0 or c > 15 or l <= 0 or v < 1 or v > 127 then
-      return nil, "note " .. i .. " is out of range"
-    end
-  end
+  local checked, err = core.check_note_list(doc.notes)
+  if not checked then return nil, err end
   return doc
 end
 
@@ -333,6 +339,66 @@ function core.notes_with_key(notes, key, scale)
   table.insert(kept, 1, "Scale: " .. scale)
   table.insert(kept, 1, "Key: " .. key)
   return table.concat(kept, "\n")
+end
+
+-- Sketch --------------------------------------------------------------------
+
+-- Checks one empire.sketch/v1 document: a setup plus clips, each on a section,
+-- a part and an option (A, B, C...). Returns it or nil and a message.
+function core.check_sketch(doc)
+  if type(doc) ~= "table" or doc.schema ~= "empire.sketch/v1" then
+    return nil, "not an empire.sketch/v1 file"
+  end
+  local _, err = core.check_setup(doc.setup)
+  if err then return nil, err end
+  if doc.ppq ~= 960 then return nil, "ppq must be 960" end
+  if math.type(doc.loop_bars) ~= "integer" or doc.loop_bars < 1 then return nil, "bad loop_bars" end
+  if math.type(doc.options) ~= "integer" or doc.options < 1 or doc.options > 26 then return nil, "bad options" end
+  if type(doc.parts) ~= "table" or #doc.parts == 0 then return nil, "no parts" end
+  local sections, parts = {}, {}
+  for _, section in ipairs(doc.setup.sections) do sections[section.name] = true end
+  for i, part in ipairs(doc.parts) do
+    if type(part.name) ~= "string" or part.name == "" then return nil, "part " .. i .. " has no name" end
+    parts[part.name] = true
+  end
+  if type(doc.clips) ~= "table" or #doc.clips == 0 then return nil, "no clips" end
+  for i, clip in ipairs(doc.clips) do
+    local where = "clip " .. i .. ": "
+    if not sections[clip.section] then return nil, where .. "unknown section " .. tostring(clip.section) end
+    if not parts[clip.part] then return nil, where .. "unknown part " .. tostring(clip.part) end
+    if not core.option_lane(clip.option, doc.options) then return nil, where .. "bad option " .. tostring(clip.option) end
+    local _, note_err = core.check_note_list(clip.notes)
+    if note_err then return nil, where .. note_err end
+  end
+  return doc
+end
+
+-- The lane (from 0) for option "A", "B"..., or nil.
+function core.option_lane(option, options)
+  if type(option) ~= "string" or #option ~= 1 then return nil end
+  local lane = option:byte() - 65
+  if lane < 0 or lane >= options then return nil end
+  return lane
+end
+
+-- The section (from 1) a sketch bar (from 0) falls in; one loop per section.
+function core.sketch_section(bar, loop_bars, count)
+  return math.max(1, math.min(count, bar // loop_bars + 1))
+end
+
+-- Which fixed lane each picked clip goes on in the master, so that layered
+-- picks on one track and section don't overlap. picks: { { track, section } }.
+-- Returns lanes by pick and the most lanes each track needs.
+function core.master_lanes(picks)
+  local used, lanes, needed = {}, {}, {}
+  for i, pick in ipairs(picks) do
+    local key = tostring(pick.track) .. "/" .. pick.section
+    local lane = used[key] or 0
+    used[key] = lane + 1
+    lanes[i] = lane
+    needed[pick.track] = math.max(needed[pick.track] or 0, lane + 1)
+  end
+  return lanes, needed
 end
 
 -- http.sh writes the HTTP status on the first line and the body after it.

@@ -1,0 +1,15 @@
+{"schema":"empire.sketch/v1","ppq":960,"loop_bars":2,"options":3,
+ "setup":{"schema":"empire.setup/v1","tempo":120,"time_signature":[4,4],"key":"A","scale":"minor",
+  "sections":[{"name":"Intro","bars":4},{"name":"Drop","bars":8}],"tracks":[]},
+ "parts":[{"name":"One"},{"name":"Two"}],
+ "clips":[
+  {"section":"Intro","part":"One","option":"A","label":"a","notes":[[0,57,0,960,100]]},
+  {"section":"Intro","part":"One","option":"B","label":"b","notes":[[0,60,0,960,100]]},
+  {"section":"Intro","part":"One","option":"C","label":"c","notes":[[0,64,0,960,100]]},
+  {"section":"Drop","part":"One","option":"A","label":"a","notes":[[0,57,0,480,100],[3840,60,0,480,100]]},
+  {"section":"Drop","part":"One","option":"B","label":"b","notes":[[0,60,0,480,100]]},
+  {"section":"Drop","part":"One","option":"C","label":"c","notes":[[0,64,0,480,100]]},
+  {"section":"Drop","part":"Two","option":"A","label":"a","notes":[[0,45,0,480,100]]},
+  {"section":"Drop","part":"Two","option":"B","label":"b","notes":[[0,48,0,480,100]]},
+  {"section":"Drop","part":"Two","option":"C","label":"c","notes":[[0,52,0,480,100]]}
+ ]}
