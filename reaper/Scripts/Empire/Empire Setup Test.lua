@@ -56,12 +56,14 @@ local function step()
   tick = tick + 1
   if tick == 10 then
     dump("before")
-    say("set root", R.MIDIEditor_SetSetting_int(editor, "scale_root", 6))
-    say("set type", R.MIDIEditor_SetSetting_int(editor, "scale_type", 0x5AD))
+    R.MIDIEditor_OnCommand(editor, 43508) -- Key snap root note: F#
   elseif tick == 20 then
     dump("after set")
     local _, chunk = R.GetItemStateChunk(item, "", false)
-    say("chunk\n" .. chunk)
+    for line in chunk:gmatch("[^\n]+") do
+      if line:match("SCALE") or line:match("KEYSNAP") or line:match("CFGEDIT ") then say("chunk", line) end
+    end
+    R.MIDIEditor_OnCommand(editor, 43500) -- back to C for other projects
     save()
     R.MIDIEditor_OnCommand(editor, 2)
     return
