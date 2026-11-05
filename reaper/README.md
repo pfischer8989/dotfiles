@@ -52,6 +52,8 @@ ln -sfn ~/dotfiles/reaper/Scripts/Empire ~/Library/Application\ Support/REAPER/S
   tracks and plugins, with section markers.
 - `empire_sketch/goa_test.py` writes a goa psytrance test sketch, and **Empire
   Sketch Test** proves the build and master steps with no plugins.
+- `empire_sketch/build_master.py <song>` asks the open REAPER for a master from
+  that song's sketch tab, so Accepting the picks in the board can build it.
 - `empire_sketch/check_sketch.py` checks a sketch and installs it for the build;
   `empire_sketch/read_master.py` turns a saved master into facts per section. The
   Song Sketch and Song Analysis workflows use both, through the `song-sketch` skill.

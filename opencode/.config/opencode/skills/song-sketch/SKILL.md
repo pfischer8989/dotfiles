@@ -105,6 +105,17 @@ name, and makes it the one **Empire Build Sketch** opens.
 
 Don't open or drive REAPER yourself: Paul runs the build.
 
+## Building the master
+
+```bash
+python3 ~/dotfiles/reaper/Scripts/Empire/empire_sketch/build_master.py "<song>"
+```
+
+Makes a master from Paul's picks in his open REAPER: a new tab, saved as a dated
+`master-*.RPP` in the song's folder. It prints the file and the clip count. If it
+fails it says why; REAPER has to be running with the sketch's tab open, so report
+that instead of trying to start REAPER. This is the one REAPER command you run.
+
 ## Reading a master
 
 ```bash
