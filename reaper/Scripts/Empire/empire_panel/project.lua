@@ -70,9 +70,10 @@ end
 
 -- Drum tracks get named rows and no key snap. REAPER remembers the mode per
 -- take, but key snap and hiding rows are one setting for every editor, so those
--- come back on leaving a drum track. The launcher calls this all the time.
-local drum_view = { take = nil, inside = false, snap = false, hide = false }
-local NAMED_NOTES, HIDE_UNNAMED, KEY_SNAP = 40043, 40454, 42471
+-- come back on leaving a drum track. Choosing piano roll is what clears hiding.
+-- The launcher calls this all the time.
+local drum_view = { take = nil, inside = false, snap = false }
+local PIANO_ROLL, NAMED_NOTES, HIDE_UNNAMED, KEY_SNAP = 40042, 40043, 40454, 42471
 
 function project.update_drum_view()
   local editor = R.MIDIEditor_GetActive()
@@ -85,7 +86,7 @@ function project.update_drum_view()
   local snapping = R.MIDIEditor_GetSetting_int(editor, "scale_enabled") == 1
   if kit ~= "" then
     if not drum_view.inside then
-      drum_view.inside, drum_view.snap, drum_view.hide = true, snapping, hidden
+      drum_view.inside, drum_view.snap = true, snapping
     end
     if R.GetToggleCommandStateEx(32060, NAMED_NOTES) ~= 1 then R.MIDIEditor_OnCommand(editor, NAMED_NOTES) end
     if snapping then R.MIDIEditor_OnCommand(editor, KEY_SNAP) end
@@ -93,7 +94,7 @@ function project.update_drum_view()
   elseif drum_view.inside then
     drum_view.inside = false
     if drum_view.snap and not snapping then R.MIDIEditor_OnCommand(editor, KEY_SNAP) end
-    if hidden and not drum_view.hide then R.MIDIEditor_OnCommand(editor, HIDE_UNNAMED) end
+    if R.GetToggleCommandStateEx(32060, NAMED_NOTES) ~= 1 then R.MIDIEditor_OnCommand(editor, PIANO_ROLL) end
   end
 end
 
