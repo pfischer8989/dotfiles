@@ -105,7 +105,7 @@ def parse_project(path):
             word = line.split(" ", 1)
             key, rest = word[0], word[1] if len(word) > 1 else ""
             if parent == "EMPIRE":
-                project["state"][key] = rest
+                project["state"][key] = rest.strip('"')  # REAPER quotes values with spaces
             elif parent == "REAPER_PROJECT":
                 if key == "TEMPO":
                     t = rest.split()

@@ -139,6 +139,11 @@ def main():
     changed = dict(project, tempo_points={120.0, 140.0})
     check("tempo change", rm.analyse(changed)["tempo_changes_ignored"], True)
     check("key state", project["state"]["KEY"], "C#")
+    with tempfile.TemporaryDirectory() as tmp:
+        path = os.path.join(tmp, "q.RPP")
+        with open(path, "w") as f:
+            f.write(RPP.replace("SCALE minor", 'SCALE "harmonic minor"'))
+        check("quoted scale", rm.parse_project(path)["state"]["SCALE"], "harmonic minor")
     check("markers", [m["name"] for m in project["markers"]], ["Intro", "Drop 2", "End"])
     check("instrument skips effects", project["tracks"][0]["instrument"], "Hive")
     check("quoted name", project["tracks"][0]["name"], "Bass")
