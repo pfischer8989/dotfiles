@@ -13,6 +13,13 @@ options that are real musical ideas. MIDI only: the sounds are his.
 Scripts are in `~/dotfiles/reaper/Scripts/Empire/empire_sketch/`. Romulus has
 Python 3.9 and no third-party music libraries are needed.
 
+## Work in steps
+
+A full sketch is too much to plan in one go: a single long think can use up your
+whole allowance and leave nothing written. Save as you go. Write the hook and
+chords to a file first, then one part or section at a time, running each piece as
+you add it.
+
 ## The file
 
 Write a Python script that generates the file, so a later pass can change one
