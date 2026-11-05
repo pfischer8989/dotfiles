@@ -23,6 +23,13 @@ def doc():
                       clip("Drop", "Bass", "A", 37), clip("Drop", "Bass", "B", 49)]}
 
 
+def labelled():
+    d = doc()
+    for i, c in enumerate(d["clips"]):
+        c["label"] = "idea %d" % i
+    return d
+
+
 failed = []
 
 
@@ -32,14 +39,14 @@ def check(name, got, want):
 
 
 def bad(name, change, expect):
-    d = copy.deepcopy(doc())
+    d = copy.deepcopy(labelled())
     change(d)
     found = cs.problems(d)
     if not any(expect in p for p in found):
         failed.append(f"{name}: wanted {expect!r} in {found!r}")
 
 
-check("good sketch", cs.problems(doc()), [])
+check("good sketch", cs.problems(labelled()), [])
 bad("schema", lambda d: d.update(schema="x"), "not an empire.sketch")
 bad("key", lambda d: d["setup"].update(key="H"), "unknown key")
 bad("no harmony", lambda d: d.pop("harmony"), "no harmony")
@@ -53,20 +60,31 @@ bad("float", lambda d: d["clips"][2]["notes"][0].__setitem__(0, 0.5), "whole num
 bad("drum note", lambda d: d["clips"][0]["notes"][0].__setitem__(1, 60), "General MIDI")
 bad("no label", lambda d: d["clips"][0].pop("label"), "no label")
 bad("identical", lambda d: d["clips"][3].update(notes=d["clips"][2]["notes"]), "identical")
-allowed = doc()
+same = doc()
+check("same labels are refused", any("different labels" in p for p in cs.problems(same)), True)
+copies = labelled()
+copies["clips"][3]["notes"] = copies["clips"][0]["notes"]
+copies["clips"][2]["notes"] = copies["clips"][0]["notes"]
+copies["clips"][1]["notes"] = copies["clips"][0]["notes"]
+check("copied clips are refused", any("are different" in p for p in cs.problems(copies)), True)
+allowed = labelled()
 allowed["clips"][2]["notes"][0][1] = 38
 allowed["clips"][2]["outside_key"] = True
 check("outside key on purpose", cs.problems(allowed), [])
 
-kick = doc()
+kick = labelled()
 kick["clips"][2]["notes"][0][1] = 37
+rings = labelled()
+rings["clips"][2]["notes"] = [[1, 37, 0, 480, 100]]
+rings["clips"][0]["notes"] = [[240, 36, 0, 100, 100]]
+check("bass through a kick warns", any("rings through" in w for w in cs.warnings(rings)), True)
 check("bass on kick warns", any("start on a kick" in w for w in cs.warnings(kick)), True)
 check("slug", cs.slug("Goa Sketch 2!"), "goa-sketch-2")
 
 with tempfile.TemporaryDirectory() as root:
     path = os.path.join(root, "in.json")
     with open(path, "w") as f:
-        json.dump(doc(), f)
+        json.dump(labelled(), f)
     target = cs.install(path, "Goa Sketch 2", root)
     check("target", target, os.path.join(root, "goa-sketch-2", "sketch.json"))
     check("latest", open(os.path.join(root, "latest")).read().strip(), target)

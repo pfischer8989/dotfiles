@@ -19,6 +19,8 @@ from read_master import ROOTS, SCALES
 
 DRUM_NOTES = {35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 69, 70}
 KICKS = {35, 36}
+MIN_UNIQUE_CLIPS = 0.75
+RING_WARNING = 0.5
 SKETCHES = "~/.empire/reaper/sketches"
 
 
@@ -115,6 +117,16 @@ def problems(doc):
                 if (c.get("section"), c.get("part")) == cell and c.get("notes")}
         if clip.get("option") == letters[-1] and len(same) < len(seen[cell]):
             out.append(f"{cell[0]}/{cell[1]}: two options are identical")
+    clips = [c for c in doc.get("clips", []) if c.get("notes")]
+    unique = len({json.dumps(sorted(c["notes"])) for c in clips if all(isinstance(n, list) for n in c["notes"])})
+    if clips and unique / len(clips) < MIN_UNIQUE_CLIPS:
+        out.append(f"only {unique} of {len(clips)} clips are different: a section needs its own ideas, not copies")
+    labels = {}
+    for c in doc.get("clips", []):
+        labels.setdefault((c.get("section"), c.get("part")), []).append(c.get("label"))
+    for cell, names in labels.items():
+        if len(set(names)) < len(names):
+            out.append(f"{cell[0]}/{cell[1]}: options need different labels to choose by")
     for cell, have in seen.items():
         missing = [x for x in letters if x not in have]
         if missing:
@@ -139,6 +151,9 @@ def warnings(doc):
                 hits = sum(1 for n in c["notes"] if n[0] in kicks)
                 if hits:
                     out.append(f"{section}/Bass/{c['option']}: {hits} notes start on a kick")
+                rung = sum(1 for k in kicks if any(n[0] < k < n[0] + n[3] for n in c["notes"]))
+                if kicks and rung / len(kicks) > RING_WARNING:
+                    out.append(f"{section}/Bass/{c['option']}: rings through {rung} of {len(kicks)} kicks")
     return sorted(out)
 
 

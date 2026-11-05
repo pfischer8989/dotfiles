@@ -48,8 +48,8 @@ thing and keep the rest. Keep the script with your artifacts.
   clip, which the master repeats to fill the section. Keep `bars` a multiple of
   `loop_bars`.
 - `template` is the REAPER track template for the part. Use the names in the
-  brief. Available: `Atlas Kit`, `Synth - Hive`, `Synth - Zebra 3`,
-  `Synth - Diva`, `Pad - Diva`.
+  brief; several parts can share one. Available: `Atlas Kit`, `Synth - Hive`,
+  `Synth - Zebra 3`, `Drone - Zebra 3`, `Synth - Diva`, `Pad - Diva`.
 - A part that doesn't play in a section has no clips there. A part that does
   has exactly one clip per option.
 - The drum part must be named `Drums` and use General MIDI notes: kick 36, rim
@@ -61,22 +61,31 @@ C4 is pitch 60 here: C#2 is 37, about 69 Hz.
 
 ## Writing options worth choosing between
 
-These come from analysing the first test sketch, where mixed picks fought each
-other. Paul picks each part independently, so **any option of one part has to
-work with any option of another.**
+These come from the first tests, where mixed picks fought each other and Paul
+found the result correct but boring: "not many hooks or interesting parts."
+Being interesting is the job. Paul picks each part independently, so **any option
+of one part has to work with any option of another.**
 
 1. **One chord sequence per section.** Every option of every part follows that
    section's `harmony`. Options differ in rhythm, voicing and register, never
-   in chords. Being in the same key doesn't stop chords clashing.
+   in chords. Being in the same key doesn't stop chords clashing. Different
+   sections should usually have different sequences: a song with one
+   progression throughout has nowhere to go.
 2. **Labels say what's in the clip.** Paul chooses by them. A label is a few
    plain words about what you actually wrote.
 3. **Options differ in idea.** Not the same pattern with a note moved. If he
-   can't hear the difference on a quick click, it's a wasted option.
-4. **Real melodies.** Write lines with a shape and a place they're going. Don't
-   pick notes at random. Give the song a short theme and let it come back in
-   different sections and forms.
-5. **Keep kick and bass apart.** Bass notes shouldn't start on a kick in any
-   combination, unless that's the idea of the genre.
+   can't hear the difference on a quick click, it's a wasted option. A section
+   gets its own clips: reuse a clip elsewhere only when returning to it is the
+   point, and the checker refuses a sketch where under 75% of clips are different.
+4. **Hooks first.** Before writing anything, write the song's main hook: a phrase
+   someone could hum after one listen, with a distinctive rhythm and a shape that
+   goes somewhere. A slow note per bar isn't a hook. Build the song around it:
+   hint at it early, state it plainly, answer it, change it, and make its last
+   return feel earned. Never pick notes at random.
+5. **Keep kick and bass out of each other's way.** The checker warns when bass
+   notes start on kicks or ring through them. Decide per genre: a rolling goa bass
+   has to stop before the kick; a sidechained synthwave bass can sit under it.
+   Report what you decided.
 6. **Keep registers apart.** Decide which range each part owns. Two parts
    sitting in the same octaves mask each other.
 7. **Sections have to differ when they change.** Going into a bigger section,
@@ -88,6 +97,13 @@ work with any option of another.**
    long, or make them small.
 9. **Think about the loop's turnaround.** Clips repeat, so bar 8 has to lead
    back to bar 1 as well as onward.
+
+10. **Give every section a moment.** Something a listener would notice and wait
+    for: a drop-out, a rhythm that changes, a line that answers the hook, a new
+    register, a chord nobody expected. Note how many bars repeat, and don't let a
+    long section be the same 8 bars with nothing new.
+11. **Dynamics are notes too.** Use velocity, rests and space. Parts leaving is as
+    strong as parts entering. The loudest moment works because of the quiet before.
 
 Stay in the key and scale unless the brief says otherwise. A clip that steps
 outside on purpose sets `"outside_key": true`, and your report says so.
