@@ -56,7 +56,7 @@ def parse_midi(lines):
 
 def parse_project(path):
     project = {"tempo": None, "time_signature": [4, 4], "markers": [], "tracks": [], "state": {},
-               "tempo_changes": False}
+               "tempo_points": set()}
     stack, track, item, midi = [], None, None, None
     with open(path, errors="replace") as f:
         for raw in f:
@@ -107,7 +107,7 @@ def parse_project(path):
                     if t[3] == "0":  # regions come as pairs and set this flag
                         project["markers"].append({"name": t[2], "time": float(t[1])})
             elif parent == "TEMPOENVEX" and key == "PT":
-                project["tempo_changes"] = True
+                project["tempo_points"].add(float(rest.split()[1]))
             elif parent == "TRACK" and track is not None:
                 if key == "NAME":
                     track["name"] = shlex.split(rest)[0] if rest else ""
@@ -188,7 +188,7 @@ def analyse(project, source_name=""):
 
     facts = {"schema": "empire.song-facts/v1", "project": source_name, "tempo": project["tempo"],
              "time_signature": project["time_signature"], "key": key, "scale": scale,
-             "tempo_changes_ignored": project["tempo_changes"],
+             "tempo_changes_ignored": bool(project["tempo_points"] - {project["tempo"]}),
              "tracks": [{"name": p["name"], "instrument": p["instrument"], "drums": p["drums"]} for p in parts],
              "sections": []}
     for s in sections:
@@ -260,13 +260,15 @@ def section_facts(section, parts, bar, step, in_key, ppq, tps):
     for i, a in enumerate(names):
         for b in names[i + 1:]:
             both = clash = tight = 0
-            for x, y in zip(grid[a], grid[b]):
+            clash_bars = set()
+            for at, (x, y) in enumerate(zip(grid[a], grid[b])):
                 if not x or not y:
                     continue
                 both += 1
                 ic = {min((m - n) % 12, (n - m) % 12) for m in x for n in y}
                 if 1 in ic:
                     clash += 1
+                    clash_bars.add(out["first_bar"] + at // STEPS_PER_BAR)
                 if any(abs(m - n) in (1, 2) and min(m, n) < 60 for m in x for n in y):
                     tight += 1
             ra, rb = out["parts"][a]["range"], out["parts"][b]["range"]
@@ -274,6 +276,7 @@ def section_facts(section, parts, bar, step, in_key, ppq, tps):
             overlap = min(max(n[1] for n in la), max(n[1] for n in lb)) - max(min(n[1] for n in la), min(n[1] for n in lb))
             out["pairs"].append({"a": a, "b": b, "shared_steps": both, "semitone_clash_pct": round(100 * clash / both) if both else 0,
                                  "close_low_pct": round(100 * tight / both) if both else 0,
+                                 "clash_bars": sorted(clash_bars),
                                  "range_overlap_semitones": max(overlap, 0), "ranges": [ra, rb]})
     return out
 
@@ -298,7 +301,8 @@ def to_markdown(facts):
                              f"on kick {f.get('onsets_on_kick')}, across kick {f.get('held_across_kick')}")
         for p in s["pairs"]:
             lines.append(f"- {p['a']}/{p['b']}: semitone clash {p['semitone_clash_pct']}% of {p['shared_steps']} shared 16ths, "
-                         f"close low {p['close_low_pct']}%, range overlap {p['range_overlap_semitones']} st")
+                         f"close low {p['close_low_pct']}%, range overlap {p['range_overlap_semitones']} st, "
+                         f"bars {' '.join(map(str, p['clash_bars'])) or 'none'}")
     return "\n".join(lines) + "\n"
 
 
