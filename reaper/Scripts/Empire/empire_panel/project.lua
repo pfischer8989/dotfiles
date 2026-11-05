@@ -13,10 +13,28 @@ function project.is_empty()
   return R.CountTracks(0) == 0 and R.CountProjectMarkers(0) == 0
 end
 
--- Scripts can only set the MIDI editor's root, through its key snap action,
--- and that needs an editor open. Uses the open one, or opens one on a throwaway
--- item and closes it again. Returns whether REAPER reports the new root.
-local function set_midi_root(key)
+-- Steps the MIDI editor's key signature until it reports the scale. The action
+-- has no target, so it walks the list one way, then the other. Returns whether
+-- it got there.
+local function step_to_scale(editor, take, mask)
+  local function now()
+    local _, _, scale = R.MIDI_GetScale(take)
+    return scale
+  end
+  for _, action in ipairs({ 40757, 40756 }) do -- next and previous key signature
+    for _ = 1, 64 do
+      if now() == mask then return true end
+      R.MIDIEditor_OnCommand(editor, action)
+    end
+  end
+  return now() == mask
+end
+
+-- The MIDI editor's key is one setting for every editor, set through its
+-- actions, and that needs an editor open. Uses the open one, or opens one on a
+-- throwaway item and closes it again. Returns whether REAPER reports the new
+-- root, then the new scale.
+local function set_midi_key(key, scale)
   local action, root = core.key_action(key)
   local index = R.CountTracks(0)
   R.InsertTrackAtIndex(index, false)
@@ -34,10 +52,12 @@ local function set_midi_root(key)
     editor = R.MIDIEditor_GetActive()
     opened = editor ~= nil
   end
-  local got = nil
+  local got, scale_ok = nil, false
   if editor then
     R.MIDIEditor_OnCommand(editor, action)
     got = R.MIDIEditor_GetSetting_int(editor, "scale_root")
+    local mask, take = core.scale_mask(scale), R.MIDIEditor_GetTake(editor)
+    if mask and take then scale_ok = step_to_scale(editor, take, mask) end
     if opened then R.MIDIEditor_OnCommand(editor, 2) end -- close it
   end
 
@@ -45,7 +65,48 @@ local function set_midi_root(key)
   R.SelectAllMediaItems(0, false)
   for _, it in ipairs(selected) do R.SetMediaItemSelected(it, true) end
   R.UpdateArrange()
-  return got == root
+  return got == root, scale_ok
+end
+
+-- Drum tracks get named rows and no key snap whenever the editor is on one, and
+-- whatever was set before comes back on leaving. REAPER keeps these per editor,
+-- not per track, so the launcher calls this all the time.
+local drum_view = { take = nil, saved = nil }
+local HIDE_UNNAMED, KEY_SNAP = 40454, 42471
+
+function project.update_drum_view()
+  local editor = R.MIDIEditor_GetActive()
+  if not editor then return end
+  local take = R.MIDIEditor_GetTake(editor)
+  if not take or take == drum_view.take or not R.ValidatePtr(take, "MediaItem_Take*") then return end
+  drum_view.take = take
+  local _, kit = R.GetSetMediaTrackInfo_String(R.GetMediaItemTake_Track(take), "P_EXT:empire_drums", "", false)
+  local drums = kit ~= ""
+  local saved = drum_view.saved
+  if drums and not saved then
+    drum_view.saved = {
+      mode = R.MIDIEditor_GetMode(editor),
+      snap = R.MIDIEditor_GetSetting_int(editor, "scale_enabled") == 1,
+      hide = R.GetToggleCommandStateEx(32060, HIDE_UNNAMED) == 1,
+    }
+    R.MIDIEditor_OnCommand(editor, 40043) -- named notes
+    if drum_view.saved.snap then R.MIDIEditor_OnCommand(editor, KEY_SNAP) end
+    if not drum_view.saved.hide then R.MIDIEditor_OnCommand(editor, HIDE_UNNAMED) end
+  elseif saved and not drums then
+    drum_view.saved = nil
+    if saved.mode == 0 then R.MIDIEditor_OnCommand(editor, 40042) end -- piano roll
+    if saved.snap then R.MIDIEditor_OnCommand(editor, KEY_SNAP) end
+    if not saved.hide then R.MIDIEditor_OnCommand(editor, HIDE_UNNAMED) end
+  end
+end
+
+-- Names a kit's rows on a track and marks the track as drums.
+function project.set_drum_kit(track, template)
+  local kit = core.DRUM_KITS[template]
+  if not kit then return false end
+  for note, name in pairs(kit.names) do R.SetTrackMIDINoteNameEx(0, track, note, -1, name) end
+  R.GetSetMediaTrackInfo_String(track, "P_EXT:empire_drums", template, true)
+  return true
 end
 
 -- The key and scale live in the project; the notes show them to a person.
@@ -53,7 +114,7 @@ function project.set_key(key, scale)
   R.SetProjExtState(0, "empire", "key", key)
   R.SetProjExtState(0, "empire", "scale", scale)
   R.GetSetProjectNotes(0, true, core.notes_with_key(R.GetSetProjectNotes(0, false, ""), key, scale))
-  return set_midi_root(key)
+  return set_midi_key(key, scale)
 end
 
 function project.set_tempo(doc)

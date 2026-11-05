@@ -84,6 +84,29 @@ RPP = """<REAPER_PROJECT 0.1 "7.78/macOS-arm64" 1
   <TRACK {3}
     NAME Empty
   >
+  <TRACK {5}
+    NAME Mapped
+    <FXCHAIN
+      <VST "VST3i: Atlas (Algonaut)" Atlas.vst3 0 "" 3{Z}
+      >
+    >
+    <ITEM
+      POSITION 6
+      LENGTH 2
+      LOOP 0
+      MUTE 0 0
+      NAME Mapped
+      <SOURCE MIDI
+        HASDATA 1 960 QN
+        E 0 90 25 64
+        E 200 80 25 00
+        E 3640 b0 7b 00
+      >
+    >
+    <EXT
+      empire_drums "Atlas Kit"
+    >
+  >
   <TRACK {4}
     NAME Guitar
     <ITEM
@@ -124,7 +147,7 @@ def main():
 
     facts = rm.analyse(project, "m.RPP")
     check("sections", [(s["name"], s["first_bar"], s["bars"]) for s in facts["sections"]], [("Intro", 1, 2), ("Drop 2", 3, 2)])
-    check("empty track left out", [t["name"] for t in facts["tracks"]], ["Bass", "Atlas"])
+    check("empty track left out", [t["name"] for t in facts["tracks"]], ["Bass", "Atlas", "Mapped"])
     intro, drop = facts["sections"]
     check("muted item is ignored", intro["parts"]["Bass"]["clips"], ["Loop"])
     check("no drums in the intro", "Atlas" in intro["parts"], False)
@@ -135,6 +158,7 @@ def main():
     check("bass on the kick", drop["parts"]["Bass"]["onsets_on_kick"], 1)
     check("grid", intro["parts"]["Bass"]["onsets_across_bars"], "x...............")
     check("repeat period", intro["parts"]["Bass"]["repeats_every_bars"], 2)
+    check("a mapped kit uses its own names", drop["parts"]["Mapped"]["hits_per_bar"], {"snare": 0.5})
     check("audio is flagged", facts["audio_not_read"], ["Guitar"])
     check("audio warning", "wasn't read: Guitar" in rm.to_markdown(facts), True)
     check("markdown", "Drop 2: bar 3" in rm.to_markdown(facts), True)

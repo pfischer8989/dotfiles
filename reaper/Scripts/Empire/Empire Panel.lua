@@ -322,9 +322,9 @@ local project_value = project.value
 
 -- The key and scale go in the project and the MIDI editor's root.
 local function set_key(key, scale)
-  local ok = project.set_key(key, scale)
-  log(string.format("key %s %s, midi root %s", key, scale, ok and "set" or "not set"))
-  return ok
+  local root_ok, scale_ok = project.set_key(key, scale)
+  log(string.format("key %s %s, midi root %s, scale %s", key, scale, root_ok and "set" or "not set", scale_ok and "set" or "not set"))
+  return root_ok and scale_ok
 end
 
 -- Builds the project a setup file describes: Empire Song, tempo, time
@@ -365,8 +365,8 @@ local function set_up_project(item, doc)
   R.SetProjExtState(0, "empire", "setup", tag)
   R.SetEditCurPos(0, true, false)
   R.UpdateTimeline()
-  message = root_ok and "Project set up. Now pick the scale in the MIDI editor."
-    or "Project set up, but the MIDI editor's root didn't change."
+  message = root_ok and "Project set up."
+    or "Project set up, but the MIDI editor's key didn't change."
   log(string.format("set up %s: %d tracks, %d markers", tag, #doc.tracks, #doc.sections + 1))
 end
 

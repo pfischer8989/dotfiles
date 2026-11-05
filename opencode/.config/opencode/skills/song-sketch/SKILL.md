@@ -54,7 +54,8 @@ thing and keep the rest. Keep the script with your artifacts.
   has exactly one clip per option.
 - The drum part must be named `Drums` and use General MIDI notes: kick 36, rim
   37, snare 38, clap 39, closed hat 42, open hat 46, toms 45, 47 and 48, crash
-  49, ride 51.
+  49, ride 51, shaker 70. Always write these, whatever the kit: the build moves
+  them to the kit's own notes. Atlas has one tom row, so all toms land together.
 
 C4 is pitch 60 here: C#2 is 37, about 69 Hz.
 

@@ -255,6 +255,51 @@ core.KEYS = { "C", "C#", "Db", "D", "D#", "Eb", "E", "F", "F#", "Gb", "G", "G#",
 local ROOTS = { 0, 1, 1, 2, 3, 3, 4, 5, 6, 6, 7, 8, 8, 9, 10, 10, 11, 11 }
 core.SCALES = { "minor", "major", "harmonic minor", "melodic minor", "dorian", "phrygian",
                 "phrygian dominant", "lydian", "mixolydian", "locrian", "minor pentatonic", "major pentatonic" }
+local SCALE_STEPS = {
+  ["minor"] = { 0, 2, 3, 5, 7, 8, 10 }, ["major"] = { 0, 2, 4, 5, 7, 9, 11 },
+  ["harmonic minor"] = { 0, 2, 3, 5, 7, 8, 11 }, ["melodic minor"] = { 0, 2, 3, 5, 7, 9, 11 },
+  ["dorian"] = { 0, 2, 3, 5, 7, 9, 10 }, ["phrygian"] = { 0, 1, 3, 5, 7, 8, 10 },
+  ["phrygian dominant"] = { 0, 1, 4, 5, 7, 8, 10 }, ["lydian"] = { 0, 2, 4, 6, 7, 9, 11 },
+  ["mixolydian"] = { 0, 2, 4, 5, 7, 9, 10 }, ["locrian"] = { 0, 1, 3, 5, 6, 8, 10 },
+  ["minor pentatonic"] = { 0, 3, 5, 7, 10 }, ["major pentatonic"] = { 0, 2, 4, 7, 9 },
+}
+
+-- A scale as MIDI_GetScale reports it: one bit per semitone above the root.
+function core.scale_mask(name)
+  local steps = SCALE_STEPS[name]
+  if not steps then return nil end
+  local mask = 0
+  for _, step in ipairs(steps) do mask = mask | (1 << step) end
+  return mask
+end
+
+-- Drum kits. Sketches write drums as General MIDI notes so they don't depend on
+-- the kit; the build moves them to the kit's own notes and names those rows.
+-- read_master.py holds the same Atlas names. Pitch 36 shows as C2 in the MIDI editor.
+local function other(n) return "Other " .. n end
+core.DRUM_KITS = {
+  ["Atlas Kit"] = {
+    names = { [36] = "Kick", [37] = "Snare", [38] = "Clap", [39] = "CHat", [40] = "OHat", [41] = "Shaker",
+              [42] = "Tom", [43] = "Other", [44] = other(2), [45] = other(3), [46] = other(4), [47] = other(5) },
+    from_gm = { [35] = 36, [36] = 36, [37] = 43, [38] = 37, [39] = 38, [40] = 37, [41] = 42, [42] = 39,
+                [43] = 42, [44] = 39, [45] = 42, [46] = 40, [47] = 42, [48] = 42, [49] = 45, [50] = 42,
+                [51] = 44, [69] = 41, [70] = 41 },
+    fallback = 43,
+  },
+  -- General MIDI names until the kit's own map is known.
+  ["Superior Drummer Kit"] = {
+    names = { [36] = "Kick", [37] = "Rim", [38] = "Snare", [39] = "Clap", [41] = "Tom Low", [42] = "CHat",
+              [43] = "Tom Low 2", [44] = "Pedal Hat", [45] = "Tom Mid", [46] = "OHat", [47] = "Tom Mid 2",
+              [48] = "Tom High", [49] = "Crash", [50] = "Tom High 2", [51] = "Ride" },
+  },
+}
+
+-- The note a General MIDI drum note plays on a template's kit.
+function core.drum_note(template, pitch)
+  local kit = core.DRUM_KITS[template]
+  if not kit or not kit.from_gm then return pitch end
+  return kit.from_gm[pitch] or kit.fallback
+end
 
 function core.index_of(list, value)
   for i, x in ipairs(list) do

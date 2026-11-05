@@ -30,7 +30,7 @@ ln -sfn ~/dotfiles/reaper/Scripts/Empire ~/Library/Application\ Support/REAPER/S
   scale, sections and tracks) on Empire Song, in a new tab if this one is in use.
   Accepting a setup stage saves what the project holds then to
   `accepted-setup.json` for later stages. REAPER only lets scripts set the MIDI
-  editor's root, so the scale has to be picked there by hand.
+  editor's key, which is one setting for every editor; the build sets the root and steps to the scale.
   Tests: `lua5.4 empire_panel/test_core.lua` from `Scripts/Empire`.
 - **Empire Lane Test**: can a script put MIDI on fixed item lanes? Opens a new
   tab and writes `~/.empire/reaper/lane-test.log`. Close the tab without saving.
@@ -42,7 +42,11 @@ ln -sfn ~/dotfiles/reaper/Scripts/Empire ~/Library/Application\ Support/REAPER/S
   them shortcuts.
 - **Empire Sketch Launcher**: the build starts it. Clicking a clip in a sketch
   plays it for that track and section and mutes the other options there;
-  Cmd-clicking layers. Run it again to stop it.
+  Cmd-clicking layers. It also switches the MIDI editor to named rows with no key
+  snap on drum tracks. Run it again to stop it.
+- **Drum kits** are in `core.DRUM_KITS`. Sketches write General MIDI drum notes and
+  the build moves them to the kit's notes (Atlas: C2 kick, C#2 snare, D2 clap, D#2
+  closed hat, E2 open hat, F2 shaker, F#2 tom, G2 other, then more others).
 - **Empire Build Master**: makes a master project in a new tab from what's
   playing in the sketch: the unmuted clips looped to full section length, same
   tracks and plugins, with section markers.

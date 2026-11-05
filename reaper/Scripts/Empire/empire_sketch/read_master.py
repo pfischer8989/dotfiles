@@ -23,9 +23,12 @@ SCALES = {"major": [0, 2, 4, 5, 7, 9, 11], "minor": [0, 2, 3, 5, 7, 8, 10],
           "harmonic minor": [0, 2, 3, 5, 7, 8, 11], "melodic minor": [0, 2, 3, 5, 7, 9, 11],
           "phrygian dominant": [0, 1, 4, 5, 7, 8, 10], "locrian": [0, 1, 3, 5, 6, 8, 10],
           "minor pentatonic": [0, 3, 5, 7, 10], "major pentatonic": [0, 2, 4, 7, 9]}
+# What each note is on a kit the build mapped. Empire core.lua holds the same.
+KIT_NAMES = {"Atlas Kit": {36: "kick", 37: "snare", 38: "clap", 39: "hat", 40: "open hat", 41: "shaker", 42: "tom",
+                           43: "other", 44: "other 2", 45: "other 3", 46: "other 4", 47: "other 5"}}
 DRUM_NAMES = {35: "kick2", 36: "kick", 37: "rim", 38: "snare", 39: "clap", 40: "snare2", 41: "tom", 42: "hat",
               43: "tom", 44: "pedal hat", 45: "tom low", 46: "open hat", 47: "tom mid", 48: "tom high",
-              49: "crash", 50: "tom", 51: "ride"}
+              49: "crash", 50: "tom", 51: "ride", 69: "shaker", 70: "shaker"}
 STEPS_PER_BAR = 16
 
 
@@ -65,7 +68,7 @@ def parse_project(path):
                 tag = line[1:].split()[0] if line[1:] else ""
                 stack.append(tag)
                 if tag == "TRACK" and len(stack) == 2:
-                    track = {"name": "", "instrument": "", "items": [], "muted": False, "audio": False}
+                    track = {"name": "", "instrument": "", "items": [], "muted": False, "audio": False, "kit": ""}
                     project["tracks"].append(track)
                 elif tag == "ITEM" and track is not None:
                     item = {"position": 0.0, "length": 0.0, "muted": False, "loop": False, "offset": 0.0,
@@ -96,6 +99,9 @@ def parse_project(path):
                     midi.append(line)
                 continue
             parent = stack[-1] if stack else ""
+            if parent == "EXT" and len(stack) == 3 and track is not None and line.startswith("empire_drums "):
+                track["kit"] = line.split(" ", 1)[1].strip('"')
+                continue
             word = line.split(" ", 1)
             key, rest = word[0], word[1] if len(word) > 1 else ""
             if parent == "EMPIRE":
@@ -147,9 +153,11 @@ def expand(item, ticks_per_second):
     return out
 
 
-def is_drums(notes, name, instrument):
+def is_drums(notes, name, instrument, kit=""):
+    if kit:
+        return True
     named = "drum" in name.lower() or "atlas" in instrument.lower()
-    return named and bool(notes) and all(35 <= n[1] <= 51 for n in notes)
+    return named and bool(notes) and all(35 <= n[1] <= 51 or n[1] in (69, 70) for n in notes)
 
 
 def analyse(project, source_name=""):
@@ -183,7 +191,8 @@ def analyse(project, source_name=""):
         for i in live:
             notes += expand(i, tps)
         parts.append({"name": t["name"], "instrument": t["instrument"], "items": live, "notes": notes,
-                      "drums": is_drums(notes, t["name"], t["instrument"])})
+                      "drums": is_drums(notes, t["name"], t["instrument"], t.get("kit", "")),
+                      "names": KIT_NAMES.get(t.get("kit", ""), DRUM_NAMES)})
     song_end = max((n[0] + n[2] for p in parts for n in p["notes"]), default=0)
     if sections and sections[-1]["end"] is None:
         sections[-1]["end"] = max(song_end, sections[-1]["start"] + bar)
@@ -224,10 +233,11 @@ def section_facts(section, parts, bar, step, in_key, ppq, tps):
             hits = {}
             for n in notes:
                 hits[n[1]] = hits.get(n[1], 0) + 1
-            fact["hits_per_bar"] = {DRUM_NAMES.get(k, str(k)): round(v / bars, 1) for k, v in sorted(hits.items())}
-            kicks |= {n[0] for n in notes if n[1] in (35, 36)}
+            names = p["names"]
+            fact["hits_per_bar"] = {names.get(k, str(k)): round(v / bars, 1) for k, v in sorted(hits.items())}
+            kicks |= {n[0] for n in notes if names.get(n[1], "").startswith("kick")}
             last = [n for n in notes if n[0] >= end - bar]
-            fact["last_bar_snares"] = sum(1 for n in last if n[1] in (38, 40))
+            fact["last_bar_snares"] = sum(1 for n in last if names.get(n[1], "").startswith("snare"))
         else:
             fact["range"] = [note_name(min(n[1] for n in notes)), note_name(max(n[1] for n in notes))]
             fact["pitch_classes"] = sorted({NAMES[n[1] % 12] for n in notes}, key=NAMES.index)

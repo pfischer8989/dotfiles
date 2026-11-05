@@ -34,7 +34,7 @@ local function write_log(text)
   end
 end
 
-local function insert_clip(track, clip, start_qn, length_qn, ppq, lane)
+local function insert_clip(track, clip, start_qn, length_qn, ppq, lane, template)
   local item = R.CreateNewMIDIItemInProj(track, start_qn, start_qn + length_qn, true)
   R.SetMediaItemInfo_Value(item, "I_FIXEDLANE", lane)
   R.SetMediaItemInfo_Value(item, "B_LOOPSRC", 1)
@@ -44,7 +44,7 @@ local function insert_clip(track, clip, start_qn, length_qn, ppq, lane)
   for _, n in ipairs(clip.notes) do
     local on = R.MIDI_GetPPQPosFromProjQN(take, start_qn + n[1] / ppq)
     local off = R.MIDI_GetPPQPosFromProjQN(take, start_qn + (n[1] + n[4]) / ppq)
-    R.MIDI_InsertNote(take, false, false, on, off, n[3], n[2], n[5], true)
+    R.MIDI_InsertNote(take, false, false, on, off, n[3], core.drum_note(template, n[2]), n[5], true)
   end
   R.MIDI_Sort(take)
   local name = string.format("%s %s %s%s", clip.section, clip.part, clip.option,
@@ -78,7 +78,7 @@ local function build(path, doc)
   project.set_tempo(setup)
   local loaded = R.time_precise()
 
-  local tracks = {}
+  local tracks, templates = {}, {}
   for _, part in ipairs(doc.parts) do
     local track
     if part.template then
@@ -91,6 +91,8 @@ local function build(path, doc)
     R.SetMediaTrackInfo_Value(track, "I_FREEMODE", 2)
     R.SetMediaTrackInfo_Value(track, "I_NUMFIXEDLANES", doc.options)
     tracks[part.name] = track
+    templates[part.name] = part.template
+    project.set_drum_kit(track, part.template)
     local fx = R.TrackFX_GetInstrument(track)
     local _, instrument = R.TrackFX_GetFXName(track, fx, "")
     write_log(string.format("%s on %s", part.name, fx >= 0 and instrument or "no instrument"))
@@ -108,7 +110,8 @@ local function build(path, doc)
   end
   for _, clip in ipairs(doc.clips) do
     local start_qn = (section_index[clip.section] - 1) * doc.loop_bars * bar_qn
-    insert_clip(tracks[clip.part], clip, start_qn, doc.loop_bars * bar_qn, doc.ppq, core.option_lane(clip.option, doc.options))
+    insert_clip(tracks[clip.part], clip, start_qn, doc.loop_bars * bar_qn, doc.ppq, core.option_lane(clip.option, doc.options),
+      templates[clip.part])
   end
   for _, track in pairs(tracks) do
     for lane = 0, doc.options - 1 do
@@ -120,7 +123,7 @@ local function build(path, doc)
   R.PreventUIRefresh(-1)
   R.Undo_EndBlock("Empire: build sketch", -1)
 
-  local root_ok = project.set_key(setup.key, setup.scale)
+  local root_ok, scale_ok = project.set_key(setup.key, setup.scale)
   R.SetProjExtState(0, "empire", "sketch", path)
   R.SetProjExtState(0, "empire", "role", "sketch")
   R.SetProjExtState(0, "empire", "loop_bars", tostring(doc.loop_bars))
@@ -132,8 +135,8 @@ local function build(path, doc)
   R.UpdateArrange()
   register_scripts()
   local now = R.time_precise()
-  write_log(string.format("built %s: %d clips, %d parts, midi root %s; template %.1fs, plugins %.1fs, clips %.1fs",
-    path, #doc.clips, #doc.parts, root_ok and "set" or "not set", loaded - started, plugins - loaded, now - plugins))
+  write_log(string.format("built %s: %d clips, %d parts, midi root %s, scale %s; template %.1fs, plugins %.1fs, clips %.1fs",
+    path, #doc.clips, #doc.parts, root_ok and "set" or "not set", scale_ok and "set" or "not set", loaded - started, plugins - loaded, now - plugins))
 end
 
 local path = R.GetExtState("Empire", "sketch")

@@ -198,6 +198,27 @@ check("first pick", lanes[1], 0); check("other section shares lane 0", lanes[2],
 check("layered pick", lanes[3], 1); check("other track", lanes[4], 0)
 check("track a lanes", needed.a, 2); check("track b lanes", needed.b, 1)
 
+-- scales and drum kits
+check("major mask", core.scale_mask("major"), 2741)
+check("minor mask", core.scale_mask("minor"), 1453)
+check("melodic minor mask", core.scale_mask("melodic minor"), 2733)
+check("unknown scale", core.scale_mask("klingon"), nil)
+for _, name in ipairs(core.SCALES) do check("mask for " .. name, core.scale_mask(name) ~= nil, true) end
+check("atlas kick", core.drum_note("Atlas Kit", 36), 36)
+check("atlas snare", core.drum_note("Atlas Kit", 38), 37)
+check("atlas clap", core.drum_note("Atlas Kit", 39), 38)
+check("atlas closed hat", core.drum_note("Atlas Kit", 42), 39)
+check("atlas open hat", core.drum_note("Atlas Kit", 46), 40)
+check("atlas shaker", core.drum_note("Atlas Kit", 70), 41)
+check("atlas toms share a row", core.drum_note("Atlas Kit", 45), 42)
+check("atlas rim", core.drum_note("Atlas Kit", 37), 43)
+check("atlas unknown note", core.drum_note("Atlas Kit", 60), 43)
+check("superior keeps General MIDI", core.drum_note("Superior Drummer Kit", 38), 38)
+check("no kit keeps the note", core.drum_note("Synth - Hive", 38), 38)
+for _, kit in pairs(core.DRUM_KITS) do
+  for _, note in pairs(kit.from_gm or {}) do check("mapped row has a name", kit.names[note] ~= nil, true) end
+end
+
 -- replies
 local status, body = core.parse_reply('200\n{"ok":\ntrue}')
 check("reply status", status, 200); check("reply body", body, '{"ok":\ntrue}')

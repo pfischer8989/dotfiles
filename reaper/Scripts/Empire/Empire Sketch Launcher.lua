@@ -1,7 +1,8 @@
 -- Empire Sketch Launcher
 -- Clicking a clip in an Empire sketch plays it for that track and section and
 -- mutes the other options there. Cmd-click layers. Only acts in a sketch tab,
--- and only when the selection changes. Run it again to stop it.
+-- and only when the selection changes. It also switches the MIDI editor to named
+-- rows with no key snap on drum tracks. Run it again to stop it.
 
 local R = reaper
 local HERE = ({ R.get_action_context() })[2]:match("^(.*)[/\\]")
@@ -24,6 +25,7 @@ local function tick()
     last = now
     if now ~= "" and project.value("role") == "sketch" then project.launch_selected() end
   end
+  project.update_drum_view()
   R.defer(tick)
 end
 
