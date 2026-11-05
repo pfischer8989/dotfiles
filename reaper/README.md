@@ -54,6 +54,10 @@ ln -sfn ~/dotfiles/reaper/Scripts/Empire ~/Library/Application\ Support/REAPER/S
   Sketch Test** proves the build and master steps with no plugins.
 - `empire_sketch/build_master.py <song>` asks the open REAPER for a master from
   that song's sketch tab, so Accepting the picks in the board can build it.
+- `empire_sketch/apply_changes.py <song> <changes.json>` makes a new dated master
+  from the newest one with a list of changes (another option, cleared bars, added
+  notes) through **Empire Apply Changes**. The old master isn't touched. Another
+  pass on a Song Sketch review, with a note saying what to try, uses it.
 - `empire_sketch/check_sketch.py` checks a sketch and installs it for the build;
   `empire_sketch/read_master.py` turns a saved master into facts per section. The
   Song Sketch and Song Analysis workflows use both, through the `song-sketch` skill.

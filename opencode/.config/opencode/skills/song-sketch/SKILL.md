@@ -137,7 +137,35 @@ python3 ~/dotfiles/reaper/Scripts/Empire/empire_sketch/build_master.py "<song>"
 Makes a master from Paul's picks in his open REAPER: a new tab, saved as a dated
 `master-*.RPP` in the song's folder. It prints the file and the clip count. If it
 fails it says why; REAPER has to be running with the sketch's tab open, so report
-that instead of trying to start REAPER. This is the one REAPER command you run.
+that instead of trying to start REAPER. This and `apply_changes.py` are the only
+REAPER commands you run.
+
+## Applying changes
+
+When Paul's note asks you to try suggestions, make them as a new master so he can
+compare it with the old one:
+
+```bash
+python3 ~/dotfiles/reaper/Scripts/Empire/empire_sketch/apply_changes.py "<song>" <changes.json>
+```
+
+The script's docstring has the file format: `pick` swaps a section's part to
+another sketch option, `clear` empties bars, and `add` writes notes. Keep
+`changes.json` in your artifacts folder. Work from the newest `master-*.RPP`, and
+read its notes before writing new ones, so added parts fit what's there. New notes
+follow the same rules as a sketch: stay in key unless the suggestion is the point
+of leaving it, and write drums as General MIDI. A suggestion that needs other parts
+rewritten for a bar means clearing and writing those parts too.
+
+Run it once per pass; it makes one new dated master, in its own REAPER tab, and
+checks the whole list before touching anything. If it says a master has unsaved
+changes, report that and stop: Paul has to save it. Don't edit project files
+yourself.
+
+Then read the new master with `read_master.py` and check each change landed. In
+your report, say for every suggestion whether you applied it as written, adapted
+it (how, and why) or skipped it (why), and compare the old and new masters by
+section. Suggestions can conflict: choose, and say which you chose.
 
 ## Reading a master
 
