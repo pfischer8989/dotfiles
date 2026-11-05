@@ -46,7 +46,7 @@ ln -sfn ~/dotfiles/reaper/Scripts/Empire ~/Library/Application\ Support/REAPER/S
   snap on drum tracks. Run it again to stop it.
 - **Drum kits** are in `core.DRUM_KITS`. Sketches write General MIDI drum notes and
   the build moves them to the kit's notes (Atlas: C2 kick, C#2 snare, D2 clap, D#2
-  closed hat, E2 open hat, F2 shaker, F#2 tom, G2 other, then more others).
+  closed hat, E2 open hat, F2 shaker, F#2 tom, G2 other, C3 crash, C#3 ride).
 - **Empire Build Master**: makes a master project in a new tab from what's
   playing in the sketch: the unmuted clips looped to full section length, same
   tracks and plugins, with section markers.

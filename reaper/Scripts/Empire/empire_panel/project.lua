@@ -68,11 +68,11 @@ local function set_midi_key(key, scale)
   return got == root, scale_ok
 end
 
--- Drum tracks get named rows and no key snap whenever the editor is on one, and
--- whatever was set before comes back on leaving. REAPER keeps these per editor,
--- not per track, so the launcher calls this all the time.
-local drum_view = { take = nil, saved = nil }
-local HIDE_UNNAMED, KEY_SNAP = 40454, 42471
+-- Drum tracks get named rows and no key snap. REAPER remembers the mode per
+-- take, but key snap and hiding rows are one setting for every editor, so those
+-- come back on leaving a drum track. The launcher calls this all the time.
+local drum_view = { take = nil, inside = false, snap = false, hide = false }
+local NAMED_NOTES, HIDE_UNNAMED, KEY_SNAP = 40043, 40454, 42471
 
 function project.update_drum_view()
   local editor = R.MIDIEditor_GetActive()
@@ -81,22 +81,19 @@ function project.update_drum_view()
   if not take or take == drum_view.take or not R.ValidatePtr(take, "MediaItem_Take*") then return end
   drum_view.take = take
   local _, kit = R.GetSetMediaTrackInfo_String(R.GetMediaItemTake_Track(take), "P_EXT:empire_drums", "", false)
-  local drums = kit ~= ""
-  local saved = drum_view.saved
-  if drums and not saved then
-    drum_view.saved = {
-      mode = R.MIDIEditor_GetMode(editor),
-      snap = R.MIDIEditor_GetSetting_int(editor, "scale_enabled") == 1,
-      hide = R.GetToggleCommandStateEx(32060, HIDE_UNNAMED) == 1,
-    }
-    R.MIDIEditor_OnCommand(editor, 40043) -- named notes
-    if drum_view.saved.snap then R.MIDIEditor_OnCommand(editor, KEY_SNAP) end
-    if not drum_view.saved.hide then R.MIDIEditor_OnCommand(editor, HIDE_UNNAMED) end
-  elseif saved and not drums then
-    drum_view.saved = nil
-    if saved.mode == 0 then R.MIDIEditor_OnCommand(editor, 40042) end -- piano roll
-    if saved.snap then R.MIDIEditor_OnCommand(editor, KEY_SNAP) end
-    if not saved.hide then R.MIDIEditor_OnCommand(editor, HIDE_UNNAMED) end
+  local hidden = R.GetToggleCommandStateEx(32060, HIDE_UNNAMED) == 1
+  local snapping = R.MIDIEditor_GetSetting_int(editor, "scale_enabled") == 1
+  if kit ~= "" then
+    if not drum_view.inside then
+      drum_view.inside, drum_view.snap, drum_view.hide = true, snapping, hidden
+    end
+    if R.GetToggleCommandStateEx(32060, NAMED_NOTES) ~= 1 then R.MIDIEditor_OnCommand(editor, NAMED_NOTES) end
+    if snapping then R.MIDIEditor_OnCommand(editor, KEY_SNAP) end
+    if not hidden then R.MIDIEditor_OnCommand(editor, HIDE_UNNAMED) end
+  elseif drum_view.inside then
+    drum_view.inside = false
+    if drum_view.snap and not snapping then R.MIDIEditor_OnCommand(editor, KEY_SNAP) end
+    if hidden and not drum_view.hide then R.MIDIEditor_OnCommand(editor, HIDE_UNNAMED) end
   end
 end
 

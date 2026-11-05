@@ -25,7 +25,7 @@ SCALES = {"major": [0, 2, 4, 5, 7, 9, 11], "minor": [0, 2, 3, 5, 7, 8, 10],
           "minor pentatonic": [0, 3, 5, 7, 10], "major pentatonic": [0, 2, 4, 7, 9]}
 # What each note is on a kit the build mapped. Empire core.lua holds the same.
 KIT_NAMES = {"Atlas Kit": {36: "kick", 37: "snare", 38: "clap", 39: "hat", 40: "open hat", 41: "shaker", 42: "tom",
-                           43: "other", 44: "other 2", 45: "other 3", 46: "other 4", 47: "other 5"}}
+                           43: "other", 48: "crash", 49: "ride", 50: "other 2", 51: "other 3"}}
 DRUM_NAMES = {35: "kick2", 36: "kick", 37: "rim", 38: "snare", 39: "clap", 40: "snare2", 41: "tom", 42: "hat",
               43: "tom", 44: "pedal hat", 45: "tom low", 46: "open hat", 47: "tom mid", 48: "tom high",
               49: "crash", 50: "tom", 51: "ride", 69: "shaker", 70: "shaker"}

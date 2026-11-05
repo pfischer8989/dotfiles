@@ -276,14 +276,13 @@ end
 -- Drum kits. Sketches write drums as General MIDI notes so they don't depend on
 -- the kit; the build moves them to the kit's own notes and names those rows.
 -- read_master.py holds the same Atlas names. Pitch 36 shows as C2 in the MIDI editor.
-local function other(n) return "Other " .. n end
 core.DRUM_KITS = {
   ["Atlas Kit"] = {
     names = { [36] = "Kick", [37] = "Snare", [38] = "Clap", [39] = "CHat", [40] = "OHat", [41] = "Shaker",
-              [42] = "Tom", [43] = "Other", [44] = other(2), [45] = other(3), [46] = other(4), [47] = other(5) },
+              [42] = "Tom", [43] = "Other", [48] = "Crash", [49] = "Ride", [50] = "Other 2", [51] = "Other 3" },
     from_gm = { [35] = 36, [36] = 36, [37] = 43, [38] = 37, [39] = 38, [40] = 37, [41] = 42, [42] = 39,
-                [43] = 42, [44] = 39, [45] = 42, [46] = 40, [47] = 42, [48] = 42, [49] = 45, [50] = 42,
-                [51] = 44, [69] = 41, [70] = 41 },
+                [43] = 42, [44] = 39, [45] = 42, [46] = 40, [47] = 42, [48] = 42, [49] = 48, [50] = 42,
+                [51] = 49, [69] = 41, [70] = 41 },
     fallback = 43,
   },
   -- General MIDI names until the kit's own map is known.
