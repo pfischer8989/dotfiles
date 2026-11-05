@@ -80,6 +80,8 @@ rings["clips"][0]["notes"] = [[240, 36, 0, 100, 100]]
 check("bass through a kick warns", any("rings through" in w for w in cs.warnings(rings)), True)
 check("bass on kick warns", any("start on a kick" in w for w in cs.warnings(kick)), True)
 check("slug", cs.slug("Goa Sketch 2!"), "goa-sketch-2")
+check("run folder name is the same song", cs.slug("Song Sketch - Dark Synthwave 1"), "dark-synthwave-1")
+check("analysis run too", cs.slug("Song Analysis - Dark Synthwave 1"), "dark-synthwave-1")
 
 with tempfile.TemporaryDirectory() as root:
     path = os.path.join(root, "in.json")

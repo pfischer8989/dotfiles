@@ -158,7 +158,10 @@ def warnings(doc):
 
 
 def slug(song):
-    return re.sub(r"[^a-z0-9]+", "-", song.lower()).strip("-")
+    """A song's folder name. A run's folder is called "Song Sketch - <song>", and
+    that name means the same song."""
+    name = re.sub(r"[^a-z0-9]+", "-", song.lower()).strip("-")
+    return re.sub(r"^song-(sketch|analysis)-", "", name)
 
 
 def install(path, song, root=SKETCHES):
