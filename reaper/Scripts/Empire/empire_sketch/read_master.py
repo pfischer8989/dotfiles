@@ -65,7 +65,7 @@ def parse_project(path):
                 tag = line[1:].split()[0] if line[1:] else ""
                 stack.append(tag)
                 if tag == "TRACK" and len(stack) == 2:
-                    track = {"name": "", "instrument": "", "items": [], "muted": False}
+                    track = {"name": "", "instrument": "", "items": [], "muted": False, "audio": False}
                     project["tracks"].append(track)
                 elif tag == "ITEM" and track is not None:
                     item = {"position": 0.0, "length": 0.0, "muted": False, "loop": False, "offset": 0.0,
@@ -73,6 +73,8 @@ def parse_project(path):
                     track["items"].append(item)
                 elif tag == "SOURCE" and item is not None and "MIDI" in line:
                     midi = []
+                elif tag == "SOURCE" and item is not None and "SECTION" not in line and track is not None:
+                    track["audio"] = True
                 elif tag.startswith("VST") or tag.startswith("AU") or tag == "JS":
                     if track is not None and not track["instrument"] and re.match(r'<(VST3?i|AUi)|<VST "VST3?i:|<AU "AUi:', line):
                         track["instrument"] = re.sub(r" \(.*", "", shlex.split(line[1:], posix=True)[1]).split(": ")[-1]
@@ -189,6 +191,7 @@ def analyse(project, source_name=""):
     facts = {"schema": "empire.song-facts/v1", "project": source_name, "tempo": project["tempo"],
              "time_signature": project["time_signature"], "key": key, "scale": scale,
              "tempo_changes_ignored": bool(project["tempo_points"] - {project["tempo"]}),
+             "audio_not_read": [t["name"] for t in project["tracks"] if t.get("audio")],
              "tracks": [{"name": p["name"], "instrument": p["instrument"], "drums": p["drums"]} for p in parts],
              "sections": []}
     for s in sections:
@@ -286,6 +289,8 @@ def to_markdown(facts):
              f"{facts['tempo']:g} BPM, {facts['time_signature'][0]}/{facts['time_signature'][1]}, {facts['key']} {facts['scale']}", ""]
     if facts["tempo_changes_ignored"]:
         lines += ["WARNING: the project has tempo changes and bar numbers here ignore them.", ""]
+    if facts["audio_not_read"]:
+        lines += ["WARNING: audio on these tracks wasn't read: " + ", ".join(facts["audio_not_read"]), ""]
     lines.append("Tracks: " + ", ".join(f"{t['name']} ({t['instrument'] or 'no instrument'})" for t in facts["tracks"]))
     for s in facts["sections"]:
         lines += ["", f"## {s['name']}: bar {s['first_bar']}, {s['bars']} bars, {s['notes_per_bar']} notes a bar"]

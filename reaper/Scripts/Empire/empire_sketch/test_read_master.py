@@ -84,6 +84,17 @@ RPP = """<REAPER_PROJECT 0.1 "7.78/macOS-arm64" 1
   <TRACK {3}
     NAME Empty
   >
+  <TRACK {4}
+    NAME Guitar
+    <ITEM
+      POSITION 0
+      LENGTH 2
+      MUTE 0 0
+      <SOURCE WAVE
+        FILE "gtr.wav"
+      >
+    >
+  >
 >
 """
 
@@ -124,6 +135,8 @@ def main():
     check("bass on the kick", drop["parts"]["Bass"]["onsets_on_kick"], 1)
     check("grid", intro["parts"]["Bass"]["onsets_across_bars"], "x...............")
     check("repeat period", intro["parts"]["Bass"]["repeats_every_bars"], 2)
+    check("audio is flagged", facts["audio_not_read"], ["Guitar"])
+    check("audio warning", "wasn't read: Guitar" in rm.to_markdown(facts), True)
     check("markdown", "Drop 2: bar 3" in rm.to_markdown(facts), True)
 
     if failed:
