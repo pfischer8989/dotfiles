@@ -62,8 +62,8 @@ ln -sfn ~/dotfiles/reaper/Scripts/Empire ~/Library/Application\ Support/REAPER/S
   pass on a Song Sketch review, with a note saying what to try, uses it.
 - **Empire Mix**, through `empire_sketch/mix.py bounce <song>`: prints the newest
   master's tracks after their plugins and fader, into a new `mix-<stamp>.RPP` in its own
-  tab. Those tracks play audio at unity; buses, returns, sends, VCAs and the master
-  chain stay live, so bus effects can still be changed. The master isn't touched.
+  tab. Those tracks play audio at unity; their TB Equalizer Pro, buses, returns, sends,
+  VCAs and the master chain stay live, so they can still be changed. The master isn't touched.
   If Atlas plays everything on its main output, as templates from before 2026-11-06 do,
   the kit prints once per drum onto the output tracks, with their plugins bypassed and sends
   muted, to sound like the master. Each drum's notes are muted out, so effects inside

@@ -56,7 +56,9 @@ thing and keep the rest. Keep the script with your artifacts.
   `loop_bars`.
 - `template` is the REAPER track template for the part. Use the names in the
   brief; several parts can share one. Available: `Atlas Kit`, `Synth - Hive`,
-  `Synth - Zebra 3`, `Drone - Zebra 3`, `Synth - Diva`, `Pad - Diva`.
+  `Synth - Zebra 3`, `Synth - Diva`, `Pad - Diva`, `Bass - Hive`, `Bass - Zebra 3`,
+  `Bass - Diva`, `Drone - Zebra 3`. A bass part uses a `Bass -` template, so it lands
+  on the BASS bus, unless the brief names another.
 - A part that doesn't play in a section has no clips there. A part that does
   has exactly one clip per option.
 - The drum part must be named `Drums` and use General MIDI notes: kick 36, rim

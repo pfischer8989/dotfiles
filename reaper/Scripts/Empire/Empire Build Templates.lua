@@ -5,12 +5,14 @@
 --
 -- Your own settings win: save an FX chain under FXChains/Empire/ with one of
 -- these names and the build uses it instead of the default plugins:
---   Channel Strip   (synth tracks: AMEK 9099 -> Presswerk)
+--   Channel Strip   (synth and bass tracks: AMEK 9099 -> Presswerk)
 --   Guitar Amp      (guitar tracks: Neural Amp Modeler; no Archetype Plini X
 --                    default: its AU crashed REAPER when a build removed it)
---   Bus             (DRUMS, SYNTHS, GTR, AMBIENT folder buses)
---   Mix Bus         (master)
+--   Bus             (every folder bus: Punish -> Curves Resolve)
+--   Mix Bus         (master: Avalon AD2055 -> AD2077 -> LANDR Mastering Pro)
 --   Verb Short, Verb Long, Shimmer, Delay, Drum Crush   (the returns)
+--
+-- TB Equalizer Pro goes last on every instrument track, after any saved chain.
 --
 -- Track templates carry their wiring in P_EXT:empire, read by
 -- "Empire Insert Track": folder=, vca=, sends=Name:dB,..., arm=1.
@@ -39,10 +41,12 @@ end
 local function rgb(r, g, b) return R.ColorToNative(r, g, b) | 0x1000000 end
 
 local COLOR = {
-  DRUMS = rgb(214, 84, 64), SYNTHS = rgb(80, 140, 220), GTR = rgb(222, 160, 60),
-  AMBIENT = rgb(110, 190, 165), FX = rgb(150, 110, 200),
+  DRUMS = rgb(214, 84, 64), PERCUSSION = rgb(226, 120, 90), BASS = rgb(170, 90, 150),
+  GUITARS = rgb(222, 160, 60), SYNTHS = rgb(80, 140, 220), SAMPLES = rgb(90, 175, 200),
+  SFX = rgb(200, 190, 90), DRONES = rgb(110, 190, 165), FX = rgb(150, 110, 200),
 }
-local SECTIONS = { "DRUMS", "SYNTHS", "GTR", "AMBIENT" } -- VCA groups 1..4
+-- In track order, with VCA groups 1..8. FX comes after them, with no VCA.
+local SECTIONS = { "DRUMS", "PERCUSSION", "BASS", "GUITARS", "SYNTHS", "SAMPLES", "SFX", "DRONES" }
 
 local PLUG = {
   amek = "VST3:bx_console AMEK 9099 (Plugin Alliance)",
@@ -57,6 +61,12 @@ local PLUG = {
   diva = "VST3:Diva (u-he)",
   hive = "VST3:Hive (u-he)",
   nam = "VST3:NeuralAmpModeler (Steven Atkinson)",
+  eq = "VST3:TB Equalizer Pro (ToneBoosters)",
+  punish = "VST3:Punish (Heavyocity)",
+  resolve = "VST3:Curves Resolve Stereo (Waves)",
+  ad2055 = "VST3:Avalon AD2055 (Kazrog)",
+  ad2077 = "VST3:Avalon AD2077 (Kazrog)",
+  landr = "VST3:LANDR Mastering Pro (LANDR)",
 }
 
 local function addfx(tr, key)
@@ -163,6 +173,7 @@ end
 -- ---------------------------------------------------------------- templates
 
 local STRIP = { "amek", "presswerk" }
+local BUS = { "punish", "resolve" }
 
 local function synth(name, plug, folder, sends)
   return function()
@@ -170,6 +181,15 @@ local function synth(name, plug, folder, sends)
       ext = "folder=" .. folder .. ";vca=" .. folder .. ";sends=" .. sends })
     addfx(t, plug)
     chain(t, "Channel Strip", STRIP)
+    addfx(t, "eq")
+  end
+end
+
+-- A track for audio you bring in: loops, samples, effects.
+local function audio(name, folder)
+  return function()
+    local t = track(name, { color = COLOR[folder], ext = "folder=" .. folder .. ";vca=" .. folder })
+    addfx(t, "eq")
   end
 end
 
@@ -180,6 +200,7 @@ local function guitar(name, amp, folder, sends, o)
       ext = "folder=" .. folder .. ";vca=" .. folder .. ";sends=" .. sends .. ";arm=1" })
     if amp == "nam" then chain(t, "Guitar Amp", { "nam" }) else addfx(t, amp) end
     addfx(t, "amek")
+    addfx(t, "eq")
   end
 end
 
@@ -198,6 +219,7 @@ local function kit(name, plug, outs)
       local c = track(o .. " " .. (i + 1) * 2 - 1 .. "/" .. (i + 1) * 2, { color = COLOR.DRUMS, ext = ext })
       receive(inst, c, i + 1)
       if o == "Kick" or o == "Snare" then addfx(c, "amek") end
+      addfx(c, "eq")
       if i == #outs then R.SetMediaTrackInfo_Value(c, "I_FOLDERDEPTH", -1) end
     end
   end
@@ -209,18 +231,25 @@ local TEMPLATES = {
   { "Synth - Zebra 3", synth("Zebra 3", "zebra3", "SYNTHS", "Verb Long:-20,Delay:-24") },
   { "Synth - Diva", synth("Diva", "diva", "SYNTHS", "Verb Long:-20,Delay:-24") },
   { "Synth - Hive", synth("Hive", "hive", "SYNTHS", "Verb Long:-20,Delay:-24") },
-  { "Drone - Zebra 3", synth("Drone", "zebra3", "AMBIENT", "Verb Long:-12,Shimmer:-18,Delay:-18") },
-  { "Pad - Diva", synth("Pad", "diva", "AMBIENT", "Verb Long:-14,Shimmer:-20,Delay:-20") },
-  { "Guitar - NAM", guitar("Guitar", "nam", "GTR", "Verb Short:-18,Delay:-22") },
+  { "Pad - Diva", synth("Pad", "diva", "SYNTHS", "Verb Long:-14,Shimmer:-20,Delay:-20") },
+  { "Bass - Zebra 3", synth("Bass", "zebra3", "BASS", "") },
+  { "Bass - Diva", synth("Bass", "diva", "BASS", "") },
+  { "Bass - Hive", synth("Bass", "hive", "BASS", "") },
+  { "Bass Guitar - NAM", guitar("Bass Guitar", "nam", "BASS", "") },
+  { "Percussion - Audio", audio("Percussion", "PERCUSSION") },
+  { "Samples - Audio", audio("Samples", "SAMPLES") },
+  { "SFX - Audio", audio("SFX", "SFX") },
+  { "Drone - Zebra 3", synth("Drone", "zebra3", "DRONES", "Verb Long:-12,Shimmer:-18,Delay:-18") },
+  { "Guitar - NAM", guitar("Guitar", "nam", "GUITARS", "Verb Short:-18,Delay:-22") },
   { "Guitar Double - NAM", function()
       -- Two performances: record L first (armed), then arm R for the second take.
-      guitar("Gtr L", "nam", "GTR", "Verb Short:-20", { pan = -0.8 })()
-      guitar("Gtr R", "nam", "GTR", "Verb Short:-20", { pan = 0.8 })()
+      guitar("Gtr L", "nam", "GUITARS", "Verb Short:-20", { pan = -0.8 })()
+      guitar("Gtr R", "nam", "GUITARS", "Verb Short:-20", { pan = 0.8 })()
       local r = R.GetTrack(0, 1) -- not armed, not monitoring until its take
       R.GetSetMediaTrackInfo_String(r, "P_EXT:empire", "sends=Verb Short:-20", true)
       R.SetMediaTrackInfo_Value(r, "I_RECMON", 0)
     end },
-  { "Ambient Guitar - NAM", guitar("Ambient Gtr", "nam", "AMBIENT", "Shimmer:-10,Verb Long:-12,Delay:-14") },
+  { "Ambient Guitar - NAM", guitar("Ambient Gtr", "nam", "DRONES", "Shimmer:-10,Verb Long:-12,Delay:-14") },
 }
 
 local RETURNS = {
@@ -243,15 +272,14 @@ local function project()
     R.GetSetTrackGroupMembership(t, "VOLUME_VCA_LEAD", 1 << (i - 1), 1 << (i - 1))
   end
   for _, s in ipairs(SECTIONS) do
-    local t = track(s, { color = COLOR[s] })
-    chain(t, "Bus", (s == "DRUMS" or s == "SYNTHS") and STRIP or { "amek" })
+    chain(track(s, { color = COLOR[s] }), "Bus", BUS)
   end
-  track("FX", { color = COLOR.FX, depth = 1 })
+  chain(track("FX", { color = COLOR.FX, depth = 1 }), "Bus", BUS)
   for i, r in ipairs(RETURNS) do
     local t = track(r[1], { color = COLOR.FX, depth = (i == #RETURNS) and -1 or 0 })
     if not chain(t, r[1], r[2]) then full_wet(t) end
   end
-  chain(R.GetMasterTrack(0), "Mix Bus", STRIP)
+  chain(R.GetMasterTrack(0), "Mix Bus", { "ad2055", "ad2077", "landr" })
   R.Main_SaveProjectEx(0, PT .. "/Empire Song.RPP", 0)
   say("project template: Empire Song")
 end

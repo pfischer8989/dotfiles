@@ -9,6 +9,8 @@
 -- main output and its separate outputs are silent, the kit is printed once per drum
 -- by muting the other notes, onto those outputs' tracks. Their plugins and sends were
 -- never heard, so they arrive bypassed and muted, to sound like the master.
+-- TB Equalizer Pro is for mixing with, so it stays live on the track and out of the
+-- print, as it was set.
 --
 -- print: prints the saved mix session as it stands, tracks and returns, plus the
 -- full mix through the master chain, so mix_check.py can measure them.
@@ -21,6 +23,7 @@ local core = require("core")
 local SKETCHES = os.getenv("HOME") .. "/.empire/reaper/sketches"
 local REQUEST, RESULT = SKETCHES .. "/mix-request.json", SKETCHES .. "/mix-result.json"
 local TAIL_SECONDS = 5
+local MIX_EQ = "TB Equalizer Pro"
 local FLOAT_WAV = "ZXZhdyAAAQ==" -- WAV, 32-bit float, so nothing clips on the way out
 local SILENT_GAIN = 10 ^ (90 / 20) -- a file this far below full scale has nothing in it
 local FADER_ENVELOPES = { "Volume", "Pan", "Width", "Mute", "Trim Volume",
@@ -259,13 +262,38 @@ local function clear_receives(track)
   for i = R.GetTrackNumSends(track, -1) - 1, 0, -1 do R.RemoveTrackSend(track, -1, i) end
 end
 
+-- The mix EQ stays out of a print and on the track. Returns each one's enabled state.
+local function is_mix_eq(track, fx)
+  local _, name = R.TrackFX_GetFXName(track, fx, "")
+  return name:find(MIX_EQ, 1, true) ~= nil
+end
+
+local function bypass_mix_eq(tracks)
+  local was = {}
+  for _, track in ipairs(tracks) do
+    for fx = 0, R.TrackFX_GetCount(track) - 1 do
+      if is_mix_eq(track, fx) then
+        was[R.TrackFX_GetFXGUID(track, fx)] = R.TrackFX_GetEnabled(track, fx)
+        R.TrackFX_SetEnabled(track, fx, false)
+      end
+    end
+  end
+  return was
+end
+
 -- A printed track from here on: the audio at unity, with what's in the audio gone
--- from the track so it isn't applied twice. Its sends to returns stay.
-local function swap_to_audio(track, path)
+-- from the track so it isn't applied twice. Its sends to returns and mix EQ stay.
+local function swap_to_audio(track, path, eq_was)
   for i = R.CountTrackMediaItems(track) - 1, 0, -1 do
     R.DeleteTrackMediaItem(track, R.GetTrackMediaItem(track, i))
   end
-  for i = R.TrackFX_GetCount(track) - 1, 0, -1 do R.TrackFX_Delete(track, i) end
+  for i = R.TrackFX_GetCount(track) - 1, 0, -1 do
+    if is_mix_eq(track, i) then
+      R.TrackFX_SetEnabled(track, i, eq_was[R.TrackFX_GetFXGUID(track, i)] ~= false)
+    else
+      R.TrackFX_Delete(track, i)
+    end
+  end
   clear_receives(track)
   for _, name in ipairs(FADER_ENVELOPES) do
     local envelope = R.GetTrackEnvelopeByName(track, name)
@@ -316,6 +344,7 @@ local function bounce(request)
 
   local started = R.time_precise()
   local _, song_end = song_times()
+  local eq_was = bypass_mix_eq(tracks)
   local files = render(tracks, request.stems, song_end, true)
   local missing, silent_track = {}, {}
   for _, t in ipairs(tracks) do
@@ -350,10 +379,10 @@ local function bounce(request)
     elseif silent_track[t] then
       if not split_files[t] then silent[#silent + 1] = name_of(t) end
       os.remove(files[number_of(t)])
-      swap_to_audio(t, nil)
+      swap_to_audio(t, nil, eq_was)
     else
       printed[#printed + 1] = name_of(t)
-      swap_to_audio(t, files[number_of(t)])
+      swap_to_audio(t, files[number_of(t)], eq_was)
     end
   end
   R.PreventUIRefresh(-1)
