@@ -229,5 +229,48 @@ check("no reply", status, 0); check("no reply text", body, "curl: failed")
 status = core.parse_reply("garbage")
 check("garbage reply", status, 0)
 
+-- Atlas outputs. Saved state is base64 lines; a value can straddle two of them.
+local function b64(bytes)
+  local abc = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+  local out = {}
+  for i = 1, #bytes, 3 do
+    local a, b, c = bytes:byte(i, i + 2)
+    local n = a << 16 | (b or 0) << 8 | (c or 0)
+    local function d(s) local v = (n >> s & 63) + 1 return abc:sub(v, v) end
+    out[#out + 1] = d(18) .. d(12) .. (b and d(6) or "=") .. (c and d(0) or "=")
+  end
+  return table.concat(out)
+end
+local function atlas_chunk(pads)
+  local state = "HEADER"
+  for _ = 1, pads do state = state .. "audio_output_channel\0\1\5\1\0\0\0\0" .. "fixed_velocity" end
+  local lines, at = {}, 1
+  while at <= #state do
+    local size = (#lines % 5 == 4) and 16 or 31 -- uneven lines, some not a multiple of 3
+    lines[#lines + 1] = "      " .. b64(state:sub(at, at + size - 1))
+    at = at + size
+  end
+  return '<TRACK\n  NAME Drums\n  <FXCHAIN\n    <VST "VST3i: Atlas (Algonaut)" Atlas.vst3 0 "" 3{Z} ""\n'
+    .. table.concat(lines, "\n") .. "\n    >\n    WAK 0 0\n  >\n>\n", #lines
+end
+local outputs = core.DRUM_KITS["Atlas Kit"].outputs
+local chunk = atlas_chunk(65)
+local before_outputs = core.atlas_outputs(chunk)
+check("atlas starts on main", before_outputs[1], 1)
+local routed = core.route_atlas(chunk, outputs)
+local after_outputs = core.atlas_outputs(routed)
+local want_pairs = { 2, 3, 4, 5, 5, 6, 7, 7, 8, 8, 8, 8, 8, 8, 8, 8 }
+for pad, pair in ipairs(want_pairs) do check("atlas pad " .. pad, after_outputs[pad], pair) end
+check("atlas same size", #routed, #chunk)
+check("atlas keeps the text around it", routed:match("^(.-Atlas.-\n)"), chunk:match("^(.-Atlas.-\n)"))
+check("atlas keeps the tail", routed:sub(-22), chunk:sub(-22))
+local count = 0
+for _ in routed:gmatch("\n      ") do count = count + 1 end
+check("atlas keeps its lines", count, select(2, atlas_chunk(65)))
+check("routing twice is the same", core.route_atlas(routed, outputs), routed)
+check("a kit short of pads is refused", core.route_atlas(atlas_chunk(15), outputs), nil)
+check("no atlas", core.route_atlas("<TRACK\n>\n", outputs), nil)
+check("no atlas outputs", core.atlas_outputs("<TRACK\n>\n"), nil)
+
 if failed > 0 then print(failed .. " failed"); os.exit(1) end
 print("ok")

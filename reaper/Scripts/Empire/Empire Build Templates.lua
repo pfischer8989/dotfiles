@@ -1,7 +1,7 @@
 -- Empire Build Templates
 -- Builds the "Empire Song" project template and the Empire track templates
 -- from code. Run it from the Actions list; rerun it after changing the design.
--- It works in a new project tab, which you can close without saving after.
+-- It works in a scratch project tab and closes it when done.
 --
 -- Your own settings win: save an FX chain under FXChains/Empire/ with one of
 -- these names and the build uses it instead of the default plugins:
@@ -16,6 +16,9 @@
 -- "Empire Insert Track": folder=, vca=, sends=Name:dB,..., arm=1.
 
 local R = reaper
+local HERE = ({ R.get_action_context() })[2]:match("^(.*)[/\\]")
+package.path = HERE .. "/empire_panel/?.lua;" .. package.path
+local core = require("core")
 local RES = R.GetResourcePath()
 local TT = RES .. "/TrackTemplates/Empire"
 local PT = RES .. "/ProjectTemplates"
@@ -109,6 +112,19 @@ local function track(name, o)
   return tr
 end
 
+-- Puts each of Atlas's pads on its own output, so the kit's child tracks get audio.
+local function route_atlas(tr, outputs)
+  local _, chunk = R.GetTrackStateChunk(tr, "", false)
+  local routed = core.route_atlas(chunk, outputs)
+  if not routed or not R.SetTrackStateChunk(tr, routed, false) then
+    say("  ! could not set Atlas's outputs")
+    return
+  end
+  local _, saved = R.GetTrackStateChunk(tr, "", false)
+  local pads = core.atlas_outputs(saved)
+  say("  Atlas pad outputs: " .. (pads and table.concat(pads, " ") or "unreadable"))
+end
+
 -- Multi-out child: receive stereo pair `pair` (1 = outputs 1/2) from inst.
 local function receive(inst, child, pair)
   local s = R.CreateTrackSend(inst, child)
@@ -156,11 +172,13 @@ end
 
 local function kit(name, plug, outs)
   return function()
-    -- Folder "kit" bus; the instrument plays outputs 1/2 into it, children
-    -- receive the other pairs. Assign the outputs inside the plugin.
+    -- Folder "kit" bus; children receive the instrument's pairs from 3/4 up, and 1/2 is
+    -- for anything left on the main output. Atlas's pads are set here; other kits'
+    -- outputs are assigned inside the plugin.
     track(name, { color = COLOR.DRUMS, depth = 1, ext = "folder=DRUMS;vca=DRUMS" })
     local inst = track(name:gsub(" Kit$", "") .. " (main 1/2)", { color = COLOR.DRUMS, midi = true, nchan = #outs * 2 + 2 })
     addfx(inst, plug)
+    if plug == "atlas" then route_atlas(inst, core.DRUM_KITS[name].outputs) end
     R.SetMediaTrackInfo_Value(inst, "C_MAINSEND_NCH", 2) -- only 1/2 to the kit bus
     for i, o in ipairs(outs) do
       local ext = (o == "Kick" or o == "Snare") and "sends=Drum Crush:-12" or nil
@@ -173,7 +191,7 @@ local function kit(name, plug, outs)
 end
 
 local TEMPLATES = {
-  { "Atlas Kit", kit("Atlas Kit", "atlas", { "Kick", "Snare", "Clap", "Hats", "Perc 1", "Perc 2", "FX" }) },
+  { "Atlas Kit", kit("Atlas Kit", "atlas", core.DRUM_KITS["Atlas Kit"].outputs.order) },
   { "Superior Drummer Kit", kit("Superior Drummer Kit", "sd3", { "Kick", "Snare", "Toms", "Hats", "OH", "Room", "Ride" }) },
   { "Synth - Zebra 3", synth("Zebra 3", "zebra3", "SYNTHS", "Verb Long:-20,Delay:-24") },
   { "Synth - Diva", synth("Diva", "diva", "SYNTHS", "Verb Long:-20,Delay:-24") },
@@ -230,7 +248,13 @@ end
 R.ClearConsole()
 R.RecursiveCreateDirectory(TT, 0)
 R.RecursiveCreateDirectory(PT, 0)
+local previous = R.EnumProjects(-1)
+local scratch = RES .. "/Empire-build-tab.RPP"
+local tab = io.open(scratch, "w")
+tab:write('<REAPER_PROJECT 0.1 "7" 0\n>\n')
+tab:close()
 R.Main_OnCommand(40859, 0) -- new project tab
+R.Main_openProject("noprompt:" .. scratch) -- has a file, so it can close without asking
 R.PreventUIRefresh(1)
 for _, t in ipairs(TEMPLATES) do
   clear()
@@ -241,7 +265,11 @@ clear()
 project()
 R.PreventUIRefresh(-1)
 R.TrackList_AdjustWindows(false)
-say("done. Close this tab without saving.")
+R.Main_SaveProject(0, false)
+R.Main_OnCommand(40860, 0) -- close the tab
+R.SelectProjectInstance(previous)
+os.remove(scratch)
+say("done.")
 
 local f = io.open(RES .. "/Empire-build.log", "w")
 if f then f:write(table.concat(log, "\n"), "\n") f:close() end

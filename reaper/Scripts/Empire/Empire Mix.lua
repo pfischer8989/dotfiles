@@ -26,11 +26,6 @@ local SILENT_GAIN = 10 ^ (90 / 20) -- a file this far below full scale has nothi
 local FADER_ENVELOPES = { "Volume", "Pan", "Width", "Mute", "Trim Volume",
   "Volume (Pre-FX)", "Pan (Pre-FX)", "Width (Pre-FX)" }
 
--- Which of a kit's separate outputs each note belongs on; anything else goes to FX.
-local KIT_OUTPUTS = { ["Atlas Kit"] = { order = { "Kick", "Snare", "Clap", "Hats", "Perc 1", "Perc 2", "FX" },
-  notes = { [36] = "Kick", [37] = "Snare", [38] = "Clap", [39] = "Hats", [40] = "Hats", [41] = "Perc 1",
-    [42] = "Perc 2", [43] = "Perc 2" }, other = "FX" } }
-
 local function write_json(path, fields)
   local f = io.open(path .. ".tmp", "w")
   if not f then return end
@@ -332,7 +327,7 @@ local function bounce(request)
   local split_files, split_names = {}, {}
   for _, t in ipairs(tracks) do
     local _, kit = R.GetSetMediaTrackInfo_String(t, "P_EXT:empire_drums", "", false)
-    local outputs = KIT_OUTPUTS[kit]
+    local outputs = core.DRUM_KITS[kit] and core.DRUM_KITS[kit].outputs
     if outputs and not silent_track[t] then
       local children, all_silent = kit_children(t, outputs), true
       for _, child in pairs(children) do all_silent = all_silent and silent_track[child] ~= false end

@@ -284,6 +284,10 @@ core.DRUM_KITS = {
                 [43] = 42, [44] = 39, [45] = 42, [46] = 40, [47] = 42, [48] = 42, [49] = 48, [50] = 42,
                 [51] = 49, [69] = 41, [70] = 41 },
     fallback = 43,
+    -- Which track of the template each pad plays on; anything else goes to FX.
+    outputs = { order = { "Kick", "Snare", "Clap", "Hats", "Perc 1", "Perc 2", "FX" },
+                notes = { [36] = "Kick", [37] = "Snare", [38] = "Clap", [39] = "Hats", [40] = "Hats",
+                          [41] = "Perc 1", [42] = "Perc 2", [43] = "Perc 2" }, other = "FX" },
   },
   -- General MIDI names until the kit's own map is known.
   ["Superior Drummer Kit"] = {
@@ -459,6 +463,95 @@ function core.master_lanes(picks)
     needed[pick.track] = math.max(needed[pick.track] or 0, lane + 1)
   end
   return lanes, needed
+end
+
+-- Atlas has no parameter for a pad's output, only a value in its saved state: 16 pads
+-- from C2, in order, each with an audio_output_channel counting stereo pairs from 0.
+-- REAPER holds that state as base64 lines inside the track's <VST block.
+local B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+local B64_VALUE = {}
+for i = 1, 64 do B64_VALUE[B64:byte(i)] = i - 1 end
+
+local function b64_decode(text)
+  local out = {}
+  for i = 1, #text, 4 do
+    local a, b, c, d = text:byte(i, i + 3)
+    local n = B64_VALUE[a] << 18 | B64_VALUE[b] << 12 | (B64_VALUE[c] or 0) << 6 | (B64_VALUE[d] or 0)
+    local count = c == 61 and 1 or d == 61 and 2 or 3
+    out[#out + 1] = string.char(n >> 16, n >> 8 & 255, n & 255):sub(1, count)
+  end
+  return table.concat(out)
+end
+
+local function b64_encode(bytes)
+  local out = {}
+  for i = 1, #bytes, 3 do
+    local a, b, c = bytes:byte(i, i + 2)
+    local n = a << 16 | (b or 0) << 8 | (c or 0)
+    local function digit(shift) local v = (n >> shift & 63) + 1 return B64:sub(v, v) end
+    out[#out + 1] = digit(18) .. digit(12) .. (b and digit(6) or "=") .. (c and digit(0) or "=")
+  end
+  return table.concat(out)
+end
+
+local ATLAS_OUTPUT = "audio_output_channel\0\1\5\1" -- then the value, a 4-byte integer
+local ATLAS_PADS = 16
+
+-- Splits a track chunk around Atlas's state: text before, the state's lines, text after.
+local function atlas_state(chunk)
+  local _, header_end = chunk:find('<VST [^\n]*Atlas[^\n]*\n')
+  if not header_end then return nil end
+  local close = chunk:find("\n%s*>", header_end)
+  if not close then return nil end
+  local lines = {}
+  for line in chunk:sub(header_end + 1, close - 1):gmatch("[^\n]+") do lines[#lines + 1] = line end
+  return chunk:sub(1, header_end), lines, chunk:sub(close)
+end
+
+-- The pair each pad plays on, 1 being the main output. Nil if the chunk has no Atlas.
+function core.atlas_outputs(chunk)
+  local _, lines = atlas_state(chunk)
+  if not lines then return nil end
+  local parts = {}
+  for i, line in ipairs(lines) do parts[i] = b64_decode(line:match("%S+")) end
+  local state, pairs_out, pos = table.concat(parts), {}, 1
+  while #pairs_out < ATLAS_PADS do
+    local _, stop = state:find(ATLAS_OUTPUT, pos, true)
+    if not stop then return nil end
+    pairs_out[#pairs_out + 1] = string.unpack("<i4", state, stop + 1) + 1
+    pos = stop + 5
+  end
+  return pairs_out
+end
+
+-- A copy of the chunk with each pad on its template track's output. Those tracks take
+-- pairs 2 and up, in outputs.order, leaving the main pair silent. Nil if it can't be done.
+function core.route_atlas(chunk, outputs)
+  local before, lines, after = atlas_state(chunk)
+  if not lines then return nil end
+  local pair_of = {}
+  for i, name in ipairs(outputs.order) do pair_of[name] = i + 1 end
+  local indent, sizes, parts = lines[1]:match("^%s*"), {}, {}
+  for i, line in ipairs(lines) do
+    parts[i] = b64_decode(line:match("%S+"))
+    sizes[i] = #parts[i]
+  end
+  local state, pieces, pos = table.concat(parts), {}, 1
+  for pad = 0, ATLAS_PADS - 1 do
+    local _, stop = state:find(ATLAS_OUTPUT, pos, true)
+    if not stop then return nil end
+    local pair = pair_of[outputs.notes[36 + pad] or outputs.other]
+    pieces[#pieces + 1] = state:sub(pos, stop) .. string.pack("<i4", pair - 1)
+    pos = stop + 5
+  end
+  pieces[#pieces + 1] = state:sub(pos)
+  state = table.concat(pieces)
+  local out, at = {}, 1
+  for i, size in ipairs(sizes) do
+    out[i] = indent .. b64_encode(state:sub(at, at + size - 1))
+    at = at + size
+  end
+  return before .. table.concat(out, "\n") .. after
 end
 
 -- http.sh writes the HTTP status on the first line and the body after it.

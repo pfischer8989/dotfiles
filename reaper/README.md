@@ -10,7 +10,8 @@ ln -sfn ~/dotfiles/reaper/Scripts/Empire ~/Library/Application\ Support/REAPER/S
 - **Empire Build Templates**: writes the "Empire Song" project template and
   the track templates in `TrackTemplates/Empire/`. Rerun after changing the
   design or saving your own chains in `FXChains/Empire/` (`Channel Strip`,
-  `Guitar Amp`, `Bus`, `Mix Bus`, or a return's name).
+  `Guitar Amp`, `Bus`, `Mix Bus`, or a return's name). It sets each Atlas pad's
+  output in the plugin's saved state, because Atlas has no parameter for it.
 - **Empire Insert Track**: load it into the action list and give it a
   shortcut. Picks a template, moves it into its folder bus, joins the VCA
   group, creates its sends and arms it.
@@ -62,8 +63,8 @@ ln -sfn ~/dotfiles/reaper/Scripts/Empire ~/Library/Application\ Support/REAPER/S
   master's tracks after their plugins and fader, into a new `mix-<stamp>.RPP` in its own
   tab. Those tracks play audio at unity; buses, returns, sends, VCAs and the master
   chain stay live, so bus effects can still be changed. The master isn't touched.
-  If Atlas plays everything on its main output, as the template does now, the kit
-  prints once per drum onto the output tracks, with their plugins bypassed and sends
+  If Atlas plays everything on its main output, as templates from before 2026-11-06 do,
+  the kit prints once per drum onto the output tracks, with their plugins bypassed and sends
   muted, to sound like the master. Each drum's notes are muted out, so effects inside
   Atlas are heard per drum.
 - `mix.py print <song>` prints the saved session for measuring, into
