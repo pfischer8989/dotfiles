@@ -12,7 +12,8 @@
 --   Mix Bus         (master: AMEK 9099 -> Presswerk -> Avalon AD2055 -> AD2077 -> LANDR Mastering Pro)
 --   Verb Short, Verb Long, Shimmer, Delay, Drum Crush   (the returns)
 --
--- TB Equalizer Pro goes last on every instrument track, after any saved chain.
+-- Every instrument track has bx_console AMEK 9099, with TB Equalizer Pro last, after
+-- any saved chain. Presswerk is only on synth tracks, since the console has a compressor.
 --
 -- Track templates carry their wiring in P_EXT:empire, read by
 -- "Empire Insert Track": folder=, vca=, sends=Name:dB,..., arm=1.
@@ -190,6 +191,7 @@ end
 local function audio(name, folder)
   return function()
     local t = track(name, { color = COLOR[folder], ext = "folder=" .. folder .. ";vca=" .. folder })
+    addfx(t, "amek")
     addfx(t, "eq")
   end
 end
@@ -219,7 +221,7 @@ local function kit(name, plug, outs)
       local ext = (o == "Kick" or o == "Snare") and "sends=Drum Crush:-12" or nil
       local c = track(o .. " " .. (i + 1) * 2 - 1 .. "/" .. (i + 1) * 2, { color = COLOR.DRUMS, ext = ext })
       receive(inst, c, i + 1)
-      if o == "Kick" or o == "Snare" then addfx(c, "amek") end
+      addfx(c, "amek")
       addfx(c, "eq")
       if i == #outs then R.SetMediaTrackInfo_Value(c, "I_FOLDERDEPTH", -1) end
     end
