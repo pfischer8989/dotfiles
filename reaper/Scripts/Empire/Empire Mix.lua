@@ -240,7 +240,9 @@ local function split_kit(kit_track, outputs, children, stems)
     if played and children[output] then
       local files = render({ kit_track }, temp, select(2, song_times()), false)
       local named = string.format("%s/%02d %s.wav", stems, number_of(children[output]), output)
-      os.rename(files[number_of(kit_track)], named)
+      local file = files[number_of(kit_track)]
+      if not file then error("no print of " .. output .. " in " .. temp .. ": " .. table.concat(wav_files(temp), ", ")) end
+      os.rename(file, named)
       out[children[output]] = named
     end
   end
@@ -328,7 +330,6 @@ local function bounce(request)
   if #missing > 0 then return give_up("REAPER didn't print " .. table.concat(missing, ", ")) end
 
   local split_files, split_names = {}, {}
-  R.PreventUIRefresh(1)
   for _, t in ipairs(tracks) do
     local _, kit = R.GetSetMediaTrackInfo_String(t, "P_EXT:empire_drums", "", false)
     local outputs = KIT_OUTPUTS[kit]
@@ -345,6 +346,7 @@ local function bounce(request)
 
   local printed, silent = {}, {}
   R.Undo_BeginBlock()
+  R.PreventUIRefresh(1)
   for _, t in ipairs(tracks) do
     if split_files[t] then
       printed[#printed + 1] = name_of(t)
@@ -419,5 +421,9 @@ if not ok then
   answer({ ok = false, message = "can't read the request: " .. tostring(request) })
 elseif request then
   local done, problem = pcall(request.action == "print" and print_pass or bounce, request)
-  if not done then answer({ ok = false, message = "the script failed: " .. tostring(problem) }) end
+  if not done then
+    local message = "the script failed: " .. tostring(problem)
+    local _, open_file = R.EnumProjects(-1)
+    if request.action ~= "print" and open_file == request.mix then give_up(message) else answer({ ok = false, message = message }) end
+  end
 end
