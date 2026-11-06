@@ -497,9 +497,9 @@ end
 local ATLAS_OUTPUT = "audio_output_channel\0\1\5\1" -- then the value, a 4-byte integer
 local ATLAS_PADS = 16
 
--- Splits a track chunk around Atlas's state: text before, the state's lines, text after.
-local function atlas_state(chunk)
-  local _, header_end = chunk:find('<VST [^\n]*Atlas[^\n]*\n')
+-- Splits a track chunk around a plugin's state: text before, the state's lines, text after.
+local function plugin_state(chunk, plugin)
+  local _, header_end = chunk:find('<VST [^\n]*' .. plugin .. '[^\n]*\n')
   if not header_end then return nil end
   local close = chunk:find("\n%s*>", header_end)
   if not close then return nil end
@@ -510,7 +510,7 @@ end
 
 -- The pair each pad plays on, 1 being the main output. Nil if the chunk has no Atlas.
 function core.atlas_outputs(chunk)
-  local _, lines = atlas_state(chunk)
+  local _, lines = plugin_state(chunk, "Atlas")
   if not lines then return nil end
   local parts = {}
   for i, line in ipairs(lines) do parts[i] = b64_decode(line:match("%S+")) end
@@ -527,7 +527,7 @@ end
 -- A copy of the chunk with each pad on its template track's output. Those tracks take
 -- pairs 2 and up, in outputs.order, leaving the main pair silent. Nil if it can't be done.
 function core.route_atlas(chunk, outputs)
-  local before, lines, after = atlas_state(chunk)
+  local before, lines, after = plugin_state(chunk, "Atlas")
   if not lines then return nil end
   local pair_of = {}
   for i, name in ipairs(outputs.order) do pair_of[name] = i + 1 end
@@ -551,6 +551,80 @@ function core.route_atlas(chunk, outputs)
     out[i] = indent .. b64_encode(state:sub(at, at + size - 1))
     at = at + size
   end
+  return before .. table.concat(out, "\n") .. after
+end
+
+-- Superior Drummer keeps its mixer as text in its saved state, one block per mic with
+-- a "route output N" line. The text's length is held in the wrappers around it, at
+-- these distances before the text and as this much more than its length.
+local SD_LENGTHS = { { 4, ">I4", 0 }, { 156, ">I4", 152 }, { 184, "<I4", 176 }, { 196, "<I4", 192 } }
+local SD_LINE = 96 -- bytes on each full line of state
+
+-- The output a mic plays on, by the mic's name. Mics on a matching rule's track; all
+-- other mics go to Room. Pairs are counted as in Atlas, 1 being the main output.
+local SD_MICS = { { "^Kick", "Kick" }, { "^Snare", "Snare" }, { "^Tom", "Toms" }, { "^Hat", "Hats" },
+                  { "^Oh", "OH" }, { "^Ride", "Ride" } }
+function core.superior_track(mic)
+  for _, rule in ipairs(SD_MICS) do
+    if mic:find(rule[1]) then return rule[2] end
+  end
+  return "Room"
+end
+
+local function superior_mixer(state)
+  local _, start = state:find("\nmixer {\nlatcomp\n", 1, true)
+  local stop = start and state:find("\nbuss 0 {", start, true)
+  return start, stop
+end
+
+-- Mic name -> output number, as saved. Nil if the chunk has no Superior Drummer.
+function core.superior_outputs(chunk)
+  local _, lines = plugin_state(chunk, "Superior Drummer")
+  if not lines then return nil end
+  local parts = {}
+  for i, line in ipairs(lines) do parts[i] = b64_decode(line:match("%S+")) end
+  local state = table.concat(parts)
+  local start, stop = superior_mixer(state)
+  if not stop then return nil end
+  local out = {}
+  for mic, value in state:sub(start + 1, stop):gmatch("([^\n{}]+) {\n[^{}]-route output (%-?%d+)") do
+    out[mic] = tonumber(value)
+  end
+  return out
+end
+
+-- A copy of the chunk with each mic routed by output_of(mic), which returns the number
+-- to save. Nil if the state isn't laid out as expected.
+function core.route_superior(chunk, output_of)
+  local before, lines, after = plugin_state(chunk, "Superior Drummer")
+  if not lines or #lines < 3 then return nil end
+  local indent, parts = lines[1]:match("^%s*"), {}
+  for i, line in ipairs(lines) do parts[i] = b64_decode(line:match("%S+")) end
+  local first, last = parts[1], parts[#parts]
+  local state = table.concat(parts, "", 2, #parts - 1)
+  local whole = first .. state
+  local text = whole:find("PlugVersion", 1, true)
+  if not text or text <= 196 then return nil end
+  local length = string.unpack(">I4", whole, text - 4)
+  for _, field in ipairs(SD_LENGTHS) do
+    if string.unpack(field[2], whole, text - field[1]) ~= length + field[3] then return nil end
+  end
+  local start, stop = superior_mixer(whole)
+  if not stop then return nil end
+  local routed, count = whole:sub(start + 1, stop):gsub("([^\n{}]+)( {\n[^{}]-route output )%-?%d+",
+    function(mic, middle) return mic .. middle .. output_of(mic) end)
+  if count == 0 then return nil end
+  local changed = whole:sub(1, start) .. routed .. whole:sub(stop + 1)
+  local grown = #changed - #whole
+  for _, field in ipairs(SD_LENGTHS) do
+    local at = text - field[1]
+    changed = changed:sub(1, at - 1) .. string.pack(field[2], length + field[3] + grown) .. changed:sub(at + 4)
+  end
+  local out = { indent .. b64_encode(changed:sub(1, #first)) }
+  for at = #first + 1, #changed, SD_LINE do
+    out[#out + 1] = indent .. b64_encode(changed:sub(at, at + SD_LINE - 1))
+  end
+  out[#out + 1] = indent .. b64_encode(last)
   return before .. table.concat(out, "\n") .. after
 end
 
