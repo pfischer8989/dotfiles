@@ -350,9 +350,11 @@ local function bounce(request)
   for _, t in ipairs(tracks) do
     if split_files[t] then
       printed[#printed + 1] = name_of(t)
+      os.remove(files[number_of(t)])
       output_to_audio(t, split_files[t])
     elseif silent_track[t] then
-      silent[#silent + 1] = name_of(t)
+      if not split_files[t] then silent[#silent + 1] = name_of(t) end
+      os.remove(files[number_of(t)])
       swap_to_audio(t, nil)
     else
       printed[#printed + 1] = name_of(t)

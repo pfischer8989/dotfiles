@@ -94,6 +94,46 @@ class Clashes(unittest.TestCase):
         self.assertEqual(top["bars"][0]["section"], "Hook")
         self.assertAlmostEqual(top["peaks_hz"]["Bass"], 82.4, delta=4)
 
+    def test_a_kick_with_a_bright_click_still_counts_for_its_body(self):
+        click = kick(78, 1, 16)
+        for bar in range(16):
+            for beat in range(4):
+                at = int((bar * BAR + beat * BAR / 4) * RATE)
+                click[at:at + 400] += 0.5 * np.sin(2 * np.pi * 8000 * np.arange(400) / RATE)
+        folder = pass_folder(self.root, "p", {"Kick": click, "Bass": tone(82.4), "Lead": tone(2000, 0.1)})
+        found = involving(mc.check(folder), "Kick", "Bass")
+        self.assertTrue(any(f["low_hz"] < 80 < f["high_hz"] for f in found), found)
+
+    def test_short_hits_outrank_a_quiet_overlap_that_runs_longer(self):
+        hum = tone(3000, 0.02)
+        folder = pass_folder(self.root, "p", {"Kick": kick(78, 1, 16), "Bass": tone(82.4),
+                                              "Air 1": hum, "Air 2": tone(3000, 0.02)})
+        findings = mc.check(folder)["findings"]
+        self.assertEqual(set(findings[0]["tracks"]), {"Kick", "Bass"})
+
+    def test_returns_are_not_reported(self):
+        folder = pass_folder(self.root, "p", {"Pad": tone(1000), "Verb": tone(1000, 0.2), "Kick": kick(1000, 1, 16)})
+        with open(os.path.join(folder, "print.json")) as f:
+            doc = json.load(f)
+        doc["tracks"][1]["role"] = "return"
+        with open(os.path.join(folder, "print.json"), "w") as f:
+            json.dump(doc, f)
+        result = mc.check(folder)
+        self.assertFalse([f for f in result["findings"] if "Verb" in f["tracks"]])
+        self.assertTrue(involving(result, "Pad", "Kick"))
+
+    def test_a_finding_is_narrow_enough_to_act_on(self):
+        noise = np.random.default_rng(1).normal(0, 0.1, int(BARS * BAR * RATE))
+        other = np.random.default_rng(2).normal(0, 0.1, int(BARS * BAR * RATE))
+        folder = pass_folder(self.root, "p", {"Noise 1": noise, "Noise 2": other})
+        for f in mc.check(folder)["findings"]:
+            self.assertLessEqual(f["high_hz"] / f["low_hz"], 2 ** (6 / 3))
+
+    def test_bars_split_at_sections(self):
+        folder = pass_folder(self.root, "p", {"Pad": tone(1000), "Lead": tone(1000)})
+        top = mc.check(folder)["findings"][0]
+        self.assertEqual([(r["section"], r["bars"]) for r in top["bars"]], [("Verse", [1, 8]), ("Hook", [9, 16])])
+
     def test_no_clash_when_they_never_play_together(self):
         folder = pass_folder(self.root, "p", {"Kick": kick(78, 1, 8), "Bass": only_bars(tone(82.4), 9, 16)})
         self.assertFalse(involving(mc.check(folder), "Kick", "Bass"))
@@ -122,7 +162,7 @@ class Clashes(unittest.TestCase):
         after = mc.check(second, first)
         moved = [f for f in after["improved"] if set(f["tracks"]) == {"Kick", "Bass"}]
         self.assertTrue(moved)
-        self.assertLess(moved[0]["score"], moved[0]["before_score"])
+        self.assertLess(moved[0]["now"], moved[0]["before"])
 
     def test_silent_stems_are_named_and_not_measured(self):
         silent = np.zeros(int(BARS * BAR * RATE))

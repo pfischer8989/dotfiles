@@ -34,6 +34,8 @@ TILT_DB_PER_OCTAVE = 3.0  # music falls with frequency, so compare bands on a le
 MIN_BAR_SECONDS = 0.2
 MAX_FINDINGS = 20
 SAME_SHARE = 0.15
+MAX_BANDS = 5  # a finding wider than this is two findings
+HOLDS_BAR = 0.4  # a bar counts when the clash takes up this share of the time both tracks play there
 
 
 def read_wav(path):
@@ -130,7 +132,9 @@ def tilt_db():
 
 
 def clashes(tracks):
-    """Per pair and band: a frame mask of the clash, and how much it counts per frame."""
+    """Per pair and band: a frame mask of the clash, and how much it counts per frame.
+    Returns add to what's in the mix, but aren't reported: a reverb overlapping what
+    feeds it is what a reverb does."""
     tilt = tilt_db()
     frames = min(t["bands"].shape[2] for t in tracks)
     powers = np.stack([t["bands"][:, :, :frames] for t in tracks])  # track, channel, band, frame
@@ -141,12 +145,15 @@ def clashes(tracks):
     reference = float(np.percentile(loudest, 95))
     weight = np.clip((mix_flat - (reference - RANGE_BELOW_SONG_DB)) / RANGE_BELOW_SONG_DB, 0, 1)
     flat = levels + tilt
-    own_best = flat.max(axis=2, keepdims=True)
-    matters = (flat >= own_best - OWN_BAND_DB) & (levels >= FLOOR_DB)
+    # Near a track's top on either view: a kick's body, or a hat's top that the tilt brings out.
+    matters = ((flat >= flat.max(axis=2, keepdims=True) - OWN_BAND_DB)
+               | (levels >= levels.max(axis=2, keepdims=True) - OWN_BAND_DB)) & (levels >= FLOOR_DB)
     takes_up = levels >= mix - TAKES_UP_DB
     results = []
     for a in range(len(tracks)):
         for b in range(a + 1, len(tracks)):
+            if tracks[a]["role"] != "source" or tracks[b]["role"] != "source":
+                continue
             difference = levels[a] - levels[b]
             a_covers = takes_up[a] & matters[b] & (difference >= COVER_FROM_DB)
             b_covers = takes_up[b] & matters[a] & (-difference >= COVER_FROM_DB)
@@ -157,7 +164,7 @@ def clashes(tracks):
             score = (flagged * weight * (0.5 + amount)).max(axis=0)  # the worse channel, per band and frame
             mean_difference = to_db(powers[a].mean(axis=0)) - to_db(powers[b].mean(axis=0))
             results.append({"a": a, "b": b, "mask": flagged.any(axis=0), "score": score,
-                            "difference": mean_difference})
+                            "both": (matters[a] & matters[b]).any(axis=0), "difference": mean_difference})
     return results, frames
 
 
@@ -166,19 +173,26 @@ def band_edges(first, last):
 
 
 def group_bands(scores, seconds_per_frame):
-    """Runs of neighbouring bands that hold most of a pair's clash."""
+    """Runs of neighbouring bands that hold most of a pair's clash, none too wide to act on."""
     totals = scores.sum(axis=1) * seconds_per_frame
     best = totals.max() if totals.size else 0
     if best < 0.5:
         return []
-    keep = totals >= best * 0.25
+    keep = totals >= best * 0.5
     groups, b = [], 0
     while b < len(keep):
         if keep[b]:
             stop = b
             while stop + 1 < len(keep) and keep[stop + 1]:
                 stop += 1
-            groups.append((b, stop, float(totals[b:stop + 1].sum())))
+            while stop - b >= MAX_BANDS:  # keep the strongest stretch of a long run
+                if totals[b] < totals[stop]:
+                    b += 1
+                else:
+                    stop -= 1
+            groups.append((b, stop))
+            while stop + 1 < len(keep) and keep[stop + 1]:
+                stop += 1
             b = stop
         b += 1
     return groups
@@ -193,6 +207,17 @@ def bar_ranges(bars):
         else:
             ranges.append([bar, bar])
     return ranges
+
+
+def by_section(bars, doc):
+    """Bars as ranges, split where a section starts, each with its section's name."""
+    bar_times = doc["bars"]
+    names = [section_at(doc["markers"], at) for at in bar_times]
+    out = []
+    for name in dict.fromkeys(names[bar - 1] for bar in bars):
+        for r in bar_ranges([bar for bar in bars if names[bar - 1] == name]):
+            out.append({"bars": r, "section": name})
+    return sorted(out, key=lambda x: x["bars"][0])
 
 
 def section_at(markers, seconds):
@@ -254,18 +279,20 @@ def notes_in_range(notes, frames, low, high, seconds_per_frame):
 
 def finding_for(pair, group, tracks, doc, rate, notes):
     seconds_per_frame = HOP / rate
-    first, last, score = group
+    first, last = group
     low, high = band_edges(first, last)
     frames = pair["mask"][first:last + 1].any(axis=0)
+    both = pair["both"][first:last + 1].any(axis=0)
     a, b = tracks[pair["a"]], tracks[pair["b"]]
     bar_times = np.array(doc["bars"])
-    per_bar = {}
-    for frame in np.nonzero(frames)[0]:
-        seconds = frame * seconds_per_frame
-        if seconds < doc["song_end"]:
-            bar = int(np.searchsorted(bar_times, seconds, side="right"))
-            per_bar[bar] = per_bar.get(bar, 0) + seconds_per_frame
-    bars = sorted(bar for bar, seconds in per_bar.items() if seconds >= MIN_BAR_SECONDS)
+    frame_bars = np.searchsorted(bar_times, np.arange(len(frames)) * seconds_per_frame, side="right")
+    in_song = np.arange(len(frames)) * seconds_per_frame < doc["song_end"]
+    bars = []
+    for bar in np.unique(frame_bars[frames & in_song]):
+        here = frame_bars == bar
+        clash, together = (frames & here).sum(), (both & here).sum()
+        if clash * seconds_per_frame >= MIN_BAR_SECONDS and clash >= HOLDS_BAR * max(clash, together):
+            bars.append(int(bar))
     difference = pair["difference"][first:last + 1][:, frames]
     median = float(np.median(difference)) if difference.size else 0.0
     if median >= EVEN_DB:
@@ -274,11 +301,14 @@ def finding_for(pair, group, tracks, doc, rate, notes):
         covering, covered = b["name"], a["name"]
     else:
         covering, covered = None, None
+    strength = pair["score"][first:last + 1].max(axis=0)[frames]
+    seconds = float(frames[in_song].sum()) * seconds_per_frame
+    # Strength counts more than time, so a kick's short hits can outrank a long quiet overlap.
+    score = float(strength.mean()) * seconds ** 0.5 if strength.size else 0.0
     finding = {"tracks": [a["name"], b["name"]], "low_hz": round(low), "high_hz": round(high),
-               "score": round(score, 1), "covering": covering, "covered": covered,
-               "by_db": round(abs(median), 1), "seconds": round(sum(per_bar.values()), 1),
-               "bars": [{"bars": r, "section": section_at(doc["markers"], bar_times[r[0] - 1])}
-                        for r in bar_ranges(bars)]}
+               "score": round(score, 1), "weight": round(float(pair["score"][first:last + 1].sum()) * seconds_per_frame, 1),
+               "covering": covering, "covered": covered, "by_db": round(abs(median), 1), "seconds": round(seconds, 1),
+               "bars": by_section(bars, doc)}
     if high <= SPECTRUM_TOP_HZ:
         finding["peaks_hz"] = {t["name"]: peak_hz(t["spectrum"][:len(frames)], frames, low, high, rate)
                                for t in (a, b)}
@@ -301,16 +331,16 @@ def compare(findings, previous, band_scores):
         bands = [i for i, hz in enumerate(BANDS_HZ) if f["low_hz"] <= hz <= f["high_hz"]]
         before = sum(earlier.get(key, {}).get(str(i), 0) for i in bands)
         now = sum(band_scores.get(key, {}).get(str(i), 0) for i in bands)
-        f["before_score"] = round(before, 1)
+        f["before"] = round(before, 1)
         f["change"] = change_word(before, now)
     gone = []
     for old in previous.get("findings", []):
         key = " + ".join(sorted(old["tracks"]))
         bands = [i for i, hz in enumerate(BANDS_HZ) if old["low_hz"] <= hz <= old["high_hz"]]
         now = sum(band_scores.get(key, {}).get(str(i), 0) for i in bands)
-        if now < old["score"] * (1 - SAME_SHARE):
+        if now < old["weight"] * (1 - SAME_SHARE):
             gone.append({"tracks": old["tracks"], "low_hz": old["low_hz"], "high_hz": old["high_hz"],
-                         "before_score": old["score"], "score": round(now, 1)})
+                         "before": old["weight"], "now": round(now, 1)})
     return gone
 
 
@@ -378,19 +408,20 @@ def describe_bars(f):
     out = []
     for r in f["bars"]:
         span = f"{r['bars'][0]}" if r["bars"][0] == r["bars"][1] else f"{r['bars'][0]}-{r['bars'][1]}"
-        out.append(f"{span} ({r['section']})" if r["section"] else span)
+        out.append(f"{r['section']} {span}" if r["section"] else span)
     return ", ".join(out)
 
 
 def write_markdown(result, path):
     lines = ["# Mix check", "",
              "Measured, not heard. Each clash is a place to listen, and some will be fine. Score is a "
-             "rough weight of how long and how loud a clash is, for ranking within this report.", ""]
+             "rough weight of how strong and how long a clash is, for ranking within this report. "
+             "Returns count towards what's in the mix, but clashes with them aren't listed.", ""]
     if result.get("mix"):
         lines += [f"Full mix: peak {result['mix']['peak_db']} dBFS, RMS {result['mix']['rms_db']} dBFS.", ""]
     lines += ["## Clashes, worst first", ""]
     compared = "compared_with" in result
-    lines += ["| # | Tracks | Hz | Who | Bars | Peaks | Bass notes in range | Score |" + (" Since last |" if compared else ""),
+    lines += ["| # | Tracks | Hz | Who | Bars | Peaks | Notes in range | Score |" + (" Since last |" if compared else ""),
               "|---|---|---|---|---|---|---|---|" + ("---|" if compared else "")]
     for i, f in enumerate(result["findings"], 1):
         peaks = ", ".join(f"{n} {hz}" for n, hz in f.get("peaks_hz", {}).items() if hz) or "-"
@@ -405,7 +436,7 @@ def write_markdown(result, path):
         lines += ["", "## Improved since last pass", ""]
         for f in result["improved"]:
             lines.append(f"- {f['tracks'][0]} + {f['tracks'][1]}, {f['low_hz']}-{f['high_hz']} Hz: "
-                         f"{f['before_score']} to {f['score']}")
+                         f"{f['before']} to {f['now']}")
     lines += ["", "## Tracks", "", "| Track | Role | Peak dBFS | RMS dBFS |", "|---|---|---|---|"]
     for t in result["tracks"]:
         lines.append(f"| {t['name']} | {t['role']} | {t['peak_db']} | {t['rms_db']} |")
