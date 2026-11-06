@@ -121,6 +121,8 @@ def finish(answer):
         print(f"session {answer['mix']}")
         print(f"printed {len(answer['printed'])}: " + ", ".join(answer["printed"]))
         print("silent, so left empty: " + (", ".join(answer["silent"]) or "none"))
+        if answer.get("split"):
+            print("played everything on one output, so printed per drum: " + ", ".join(answer["split"]))
     else:
         print(f"pass {answer['folder']}: {answer['tracks']} tracks")
     print(f"took {answer['seconds']} seconds")

@@ -5,7 +5,10 @@
 -- bounce: opens a copy of a master in a new tab and prints each source track, after
 -- its plugins and fader. The copy becomes the mix session: those tracks play the
 -- audio at unity with no plugins, and buses, returns, sends, VCAs, markers and the
--- master chain stay live. The master isn't touched.
+-- master chain stay live. The master isn't touched. If a kit plays everything on its
+-- main output and its separate outputs are silent, the kit is printed once per drum
+-- by muting the other notes, onto those outputs' tracks. Their plugins and sends were
+-- never heard, so they arrive bypassed and muted, to sound like the master.
 --
 -- print: prints the saved mix session as it stands, tracks and returns, plus the
 -- full mix through the master chain, so mix_check.py can measure them.
@@ -22,6 +25,11 @@ local FLOAT_WAV = "ZXZhdyAAAQ==" -- WAV, 32-bit float, so nothing clips on the w
 local SILENT_GAIN = 10 ^ (90 / 20) -- a file this far below full scale has nothing in it
 local FADER_ENVELOPES = { "Volume", "Pan", "Width", "Mute", "Trim Volume",
   "Volume (Pre-FX)", "Pan (Pre-FX)", "Width (Pre-FX)" }
+
+-- Which of a kit's separate outputs each note belongs on; anything else goes to FX.
+local KIT_OUTPUTS = { ["Atlas Kit"] = { order = { "Kick", "Snare", "Clap", "Hats", "Perc 1", "Perc 2", "FX" },
+  notes = { [36] = "Kick", [37] = "Snare", [38] = "Clap", [39] = "Hats", [40] = "Hats", [41] = "Perc 1",
+    [42] = "Perc 2", [43] = "Perc 2" }, other = "FX" } }
 
 local function write_json(path, fields)
   local f = io.open(path .. ".tmp", "w")
@@ -183,7 +191,75 @@ local function is_silent(path)
   local source = R.PCM_Source_CreateFromFile(path)
   local gain = R.CalculateNormalization(source, 2, 0, 0, 0)
   R.PCM_Source_Destroy(source)
-  return gain == 0 or gain >= SILENT_GAIN or gain ~= gain
+  return gain == 0 or gain == 1 or gain >= SILENT_GAIN or gain ~= gain -- REAPER answers 1 for pure silence
+end
+
+local function number_of(track) return math.tointeger(R.GetMediaTrackInfo_Value(track, "IP_TRACKNUMBER")) end
+
+-- The tracks in the kit's folder that take its separate outputs, by output name.
+local function kit_children(kit_track, outputs)
+  local parent, found = R.GetParentTrack(kit_track), {}
+  for i = 0, R.CountTracks(0) - 1 do
+    local t = R.GetTrack(0, i)
+    if t ~= kit_track and R.GetParentTrack(t) == parent then
+      local name = name_of(t)
+      for _, output in ipairs(outputs.order) do
+        if name == output or name:sub(1, #output + 1) == output .. " " then found[output] = t end
+      end
+    end
+  end
+  return found
+end
+
+-- Prints a kit once per output, with the other outputs' notes muted. Returns output
+-- track -> file. The notes stay changed: the track's MIDI is replaced straight after.
+local function split_kit(kit_track, outputs, children, stems)
+  local takes = {}
+  for i = 0, R.CountTrackMediaItems(kit_track) - 1 do
+    local take = R.GetActiveTake(R.GetTrackMediaItem(kit_track, i))
+    if take and R.TakeIsMIDI(take) then
+      local notes, _, count = {}, R.MIDI_CountEvts(take)
+      for n = 0, count - 1 do
+        local _, _, muted, _, _, _, pitch = R.MIDI_GetNote(take, n)
+        notes[n] = { muted = muted, output = outputs.notes[pitch] or outputs.other }
+      end
+      takes[#takes + 1] = { take = take, notes = notes }
+    end
+  end
+  local out, temp = {}, stems .. "/split"
+  for _, output in ipairs(outputs.order) do
+    local played = false
+    for _, t in ipairs(takes) do
+      for n, note in pairs(t.notes) do
+        local plays = note.output == output and not note.muted
+        played = played or plays
+        R.MIDI_SetNote(t.take, n, nil, not plays, nil, nil, nil, nil, nil, true)
+      end
+      R.MIDI_Sort(t.take)
+    end
+    if played and children[output] then
+      local files = render({ kit_track }, temp, select(2, song_times()), false)
+      local named = string.format("%s/%02d %s.wav", stems, number_of(children[output]), output)
+      os.rename(files[number_of(kit_track)], named)
+      out[children[output]] = named
+    end
+  end
+  os.remove(temp)
+  return out
+end
+
+local function add_audio(track, path)
+  local item = R.AddMediaItemToTrack(track)
+  local take = R.AddTakeToMediaItem(item)
+  local source = R.PCM_Source_CreateFromFile(path)
+  R.SetMediaItemTake_Source(take, source)
+  R.GetSetMediaItemTakeInfo_String(take, "P_NAME", name_of(track), true)
+  R.SetMediaItemInfo_Value(item, "D_POSITION", 0)
+  R.SetMediaItemInfo_Value(item, "D_LENGTH", (R.GetMediaSourceLength(source)))
+end
+
+local function clear_receives(track)
+  for i = R.GetTrackNumSends(track, -1) - 1, 0, -1 do R.RemoveTrackSend(track, -1, i) end
 end
 
 -- A printed track from here on: the audio at unity, with what's in the audio gone
@@ -193,7 +269,7 @@ local function swap_to_audio(track, path)
     R.DeleteTrackMediaItem(track, R.GetTrackMediaItem(track, i))
   end
   for i = R.TrackFX_GetCount(track) - 1, 0, -1 do R.TrackFX_Delete(track, i) end
-  for i = R.GetTrackNumSends(track, -1) - 1, 0, -1 do R.RemoveTrackSend(track, -1, i) end
+  clear_receives(track)
   for _, name in ipairs(FADER_ENVELOPES) do
     local envelope = R.GetTrackEnvelopeByName(track, name)
     if envelope then R.DeleteEnvelopePointRange(envelope, -1, 1e9) end
@@ -203,14 +279,16 @@ local function swap_to_audio(track, path)
   R.SetMediaTrackInfo_Value(track, "I_NCHAN", 2)
   R.SetMediaTrackInfo_Value(track, "I_RECARM", 0)
   R.SetMediaTrackInfo_Value(track, "I_RECMON", 0)
-  if not path then return end
-  local item = R.AddMediaItemToTrack(track)
-  local take = R.AddTakeToMediaItem(item)
-  local source = R.PCM_Source_CreateFromFile(path)
-  R.SetMediaItemTake_Source(take, source)
-  R.GetSetMediaItemTakeInfo_String(take, "P_NAME", name_of(track), true)
-  R.SetMediaItemInfo_Value(item, "D_POSITION", 0)
-  R.SetMediaItemInfo_Value(item, "D_LENGTH", (R.GetMediaSourceLength(source)))
+  if path then add_audio(track, path) end
+end
+
+-- An output that was silent in the master now gets a drum, but nothing on it was ever
+-- heard: plugins are bypassed and sends muted, for Paul to switch on when he wants them.
+local function output_to_audio(track, path)
+  clear_receives(track)
+  for i = 0, R.TrackFX_GetCount(track) - 1 do R.TrackFX_SetEnabled(track, i, false) end
+  for i = 0, R.GetTrackNumSends(track, 0) - 1 do R.SetTrackSendInfo_Value(track, 0, i, "B_MUTE", 1) end
+  add_audio(track, path)
 end
 
 -- A bounce that can't finish leaves no tab behind; mix.py removes its files.
@@ -242,32 +320,48 @@ local function bounce(request)
   local started = R.time_precise()
   local _, song_end = song_times()
   local files = render(tracks, request.stems, song_end, true)
-  local missing, printed, silent = {}, {}, {}
+  local missing, silent_track = {}, {}
   for _, t in ipairs(tracks) do
-    local file = files[math.tointeger(R.GetMediaTrackInfo_Value(t, "IP_TRACKNUMBER"))]
-    if not file then missing[#missing + 1] = name_of(t) end
+    local file = files[number_of(t)]
+    if file then silent_track[t] = is_silent(file) else missing[#missing + 1] = name_of(t) end
   end
-  if #missing > 0 then
-    return give_up("REAPER didn't print " .. table.concat(missing, ", "))
-  end
+  if #missing > 0 then return give_up("REAPER didn't print " .. table.concat(missing, ", ")) end
 
-  R.Undo_BeginBlock()
+  local split_files, split_names = {}, {}
   R.PreventUIRefresh(1)
   for _, t in ipairs(tracks) do
-    local file = files[math.tointeger(R.GetMediaTrackInfo_Value(t, "IP_TRACKNUMBER"))]
-    if is_silent(file) then
+    local _, kit = R.GetSetMediaTrackInfo_String(t, "P_EXT:empire_drums", "", false)
+    local outputs = KIT_OUTPUTS[kit]
+    if outputs and not silent_track[t] then
+      local children, all_silent = kit_children(t, outputs), true
+      for _, child in pairs(children) do all_silent = all_silent and silent_track[child] ~= false end
+      if next(children) and all_silent then
+        split_names[#split_names + 1] = name_of(t)
+        for child, file in pairs(split_kit(t, outputs, children, request.stems)) do split_files[child] = file end
+        silent_track[t] = true -- its drums are on the outputs now
+      end
+    end
+  end
+
+  local printed, silent = {}, {}
+  R.Undo_BeginBlock()
+  for _, t in ipairs(tracks) do
+    if split_files[t] then
+      printed[#printed + 1] = name_of(t)
+      output_to_audio(t, split_files[t])
+    elseif silent_track[t] then
       silent[#silent + 1] = name_of(t)
       swap_to_audio(t, nil)
     else
       printed[#printed + 1] = name_of(t)
-      swap_to_audio(t, file)
+      swap_to_audio(t, files[number_of(t)])
     end
   end
   R.PreventUIRefresh(-1)
   R.UpdateArrange()
   R.Undo_EndBlock("Empire: print to mix session", -1)
   R.Main_SaveProject(0, false)
-  answer({ ok = true, mix = request.mix, printed = printed, silent = silent,
+  answer({ ok = true, mix = request.mix, printed = printed, silent = silent, split = split_names,
     seconds = math.floor(R.time_precise() - started) })
 end
 
