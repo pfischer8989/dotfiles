@@ -272,21 +272,18 @@ check("a kit short of pads is refused", core.route_atlas(atlas_chunk(15), output
 check("no atlas", core.route_atlas("<TRACK\n>\n", outputs), nil)
 check("no atlas outputs", core.atlas_outputs("<TRACK\n>\n"), nil)
 
--- Superior Drummer: mic routes in text, its length held in wrappers before it.
-local function sd_chunk(mics, line_bytes)
+-- Superior Drummer: mic routes as text inside the state.
+local function sd_chunk(mics, value)
   local text = "PlugVersion 3.4.3\nmixer {\nlatcomp\n"
   for _, mic in ipairs(mics) do
-    text = text .. mic .. " {\npan 0.5\nvolume 0.5\nmute 0\nroute output 0\n}\n"
+    text = text .. mic .. " {\npan 0.5\nvolume 0.5\nmute 0\nroute output " .. (value or 0) .. "\n}\n"
   end
-  text = text .. "buss 0 {\nroute output -1\n}\noutput 0 {\npan 0\n}\n}\n"
-  local n = #text
-  local head = string.rep("h", 200 - 196) .. string.pack("<I4", n + 192) .. string.rep("h", 8)
-    .. string.pack("<I4", n + 176) .. string.rep("h", 24) .. string.pack(">I4", n + 152)
-    .. string.rep("h", 148) .. string.pack(">I4", n)
-  local whole = head .. text .. "TAIL"
-  local lines = { "      " .. b64(whole:sub(1, 93)) }
-  for at = 94, #whole, line_bytes do lines[#lines + 1] = "      " .. b64(whole:sub(at, at + line_bytes - 1)) end
-  lines[#lines + 1] = "      " .. b64("\0\0\0\0\0\0")
+  text = text .. "buss 0 {\nroute output -1\n}\noutput 0 {\npan 0\n}\n}\nTAIL"
+  local lines, at = {}, 1
+  while at <= #text do
+    lines[#lines + 1] = "      " .. b64(text:sub(at, at + 95))
+    at = at + 96
+  end
   return '<TRACK\n  <FXCHAIN\n    <VST "VST3i: Superior Drummer 3 (Toontrack) (32 out)" "SD3.vst3" 0 "" 3{Z} ""\n'
     .. table.concat(lines, "\n") .. "\n    >\n  >\n>\n"
 end
@@ -298,21 +295,21 @@ check("sd overhead", core.superior_track("Oh-SankenR"), "OH")
 check("sd ride", core.superior_track("Ride"), "Ride")
 check("sd room", core.superior_track("Ambience-R88"), "Room")
 check("sd surround is room", core.superior_track("RearHeightAltR"), "Room")
-local sd = sd_chunk({ "Kick-In", "SnareTop", "AmbNear" }, 96)
-local values = { ["Kick-In"] = 2, SnareTop = 12, AmbNear = 14 }
-local sd_routed = core.route_superior(sd, function(mic) return values[mic] end)
+local sd_order = { "Kick", "Snare", "Toms", "Hats", "OH", "Room", "Ride" }
+local sd = sd_chunk({ "Kick-In", "SnareTop", "Tom1", "Hats", "Oh-Beyer", "AmbNear", "Ride" })
+check("sd starts on main", core.superior_outputs(sd)["Kick-In"], 1)
+local sd_routed = core.route_superior(sd, sd_order)
 local sd_out = core.superior_outputs(sd_routed)
-check("sd routes one digit", sd_out["Kick-In"], 2)
-check("sd routes two digits", sd_out.SnareTop, 12)
-check("sd routes last", sd_out.AmbNear, 14)
-check("sd leaves busses", core.superior_outputs(sd)["buss 0"], nil)
-check("sd unchanged is identical", core.route_superior(sd, function() return 0 end), sd)
-check("sd no plugin", core.route_superior("<TRACK\n>\n", function() return 0 end), nil)
+for mic, pair in pairs({ ["Kick-In"] = 2, SnareTop = 3, Tom1 = 4, Hats = 5, ["Oh-Beyer"] = 6, AmbNear = 7, Ride = 8 }) do
+  check("sd pair of " .. mic, sd_out[mic], pair)
+end
+check("sd bus not listed", sd_out["buss 0"], nil)
+check("sd same size", #sd_routed, #sd)
+check("sd routing twice is the same", core.route_superior(sd_routed, sd_order), sd_routed)
+check("sd a size change is refused", core.route_superior(sd_chunk({ "Kick-In" }, 10), sd_order), nil)
+check("sd a track missing from the order is refused", core.route_superior(sd, { "Kick" }), nil)
+check("sd no plugin", core.route_superior("<TRACK\n>\n", sd_order), nil)
 check("sd no plugin outputs", core.superior_outputs("<TRACK\n>\n"), nil)
--- lengths move with the text: unrouting restores every byte
-local back = core.route_superior(sd_routed, function() return 0 end)
-check("sd lengths follow the text", back, sd)
-check("sd bad layout is refused", core.route_superior(sd:gsub("PlugVersion", "Plugversion"), function() return 0 end), nil)
 
 if failed > 0 then print(failed .. " failed"); os.exit(1) end
 print("ok")

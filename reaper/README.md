@@ -11,7 +11,8 @@ ln -sfn ~/dotfiles/reaper/Scripts/Empire ~/Library/Application\ Support/REAPER/S
   the track templates in `TrackTemplates/Empire/`. Rerun after changing the
   design or saving your own chains in `FXChains/Empire/` (`Channel Strip`,
   `Guitar Amp`, `Bus`, `Mix Bus`, or a return's name). It sets each Atlas pad's
-  output in the plugin's saved state, because Atlas has no parameter for it.
+  and Superior Drummer mic's output in the plugin's saved state, because neither
+  has a parameter for it.
 - **Empire Insert Track**: load it into the action list and give it a
   shortcut. Picks a template, moves it into its folder bus, joins the VCA
   group, creates its sends and arms it.

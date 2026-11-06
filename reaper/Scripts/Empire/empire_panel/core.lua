@@ -508,13 +508,30 @@ local function plugin_state(chunk, plugin)
   return chunk:sub(1, header_end), lines, chunk:sub(close)
 end
 
+-- A state's bytes and how many are on each line, and back again in the same layout.
+local function decode_state(lines)
+  local parts, sizes = {}, {}
+  for i, line in ipairs(lines) do
+    parts[i] = b64_decode(line:match("%S+"))
+    sizes[i] = #parts[i]
+  end
+  return table.concat(parts), sizes
+end
+
+local function encode_state(state, sizes, indent)
+  local out, at = {}, 1
+  for i, size in ipairs(sizes) do
+    out[i] = indent .. b64_encode(state:sub(at, at + size - 1))
+    at = at + size
+  end
+  return table.concat(out, "\n")
+end
+
 -- The pair each pad plays on, 1 being the main output. Nil if the chunk has no Atlas.
 function core.atlas_outputs(chunk)
   local _, lines = plugin_state(chunk, "Atlas")
   if not lines then return nil end
-  local parts = {}
-  for i, line in ipairs(lines) do parts[i] = b64_decode(line:match("%S+")) end
-  local state, pairs_out, pos = table.concat(parts), {}, 1
+  local state, pairs_out, pos = decode_state(lines), {}, 1
   while #pairs_out < ATLAS_PADS do
     local _, stop = state:find(ATLAS_OUTPUT, pos, true)
     if not stop then return nil end
@@ -531,12 +548,8 @@ function core.route_atlas(chunk, outputs)
   if not lines then return nil end
   local pair_of = {}
   for i, name in ipairs(outputs.order) do pair_of[name] = i + 1 end
-  local indent, sizes, parts = lines[1]:match("^%s*"), {}, {}
-  for i, line in ipairs(lines) do
-    parts[i] = b64_decode(line:match("%S+"))
-    sizes[i] = #parts[i]
-  end
-  local state, pieces, pos = table.concat(parts), {}, 1
+  local state, sizes = decode_state(lines)
+  local pieces, pos = {}, 1
   for pad = 0, ATLAS_PADS - 1 do
     local _, stop = state:find(ATLAS_OUTPUT, pos, true)
     if not stop then return nil end
@@ -545,23 +558,12 @@ function core.route_atlas(chunk, outputs)
     pos = stop + 5
   end
   pieces[#pieces + 1] = state:sub(pos)
-  state = table.concat(pieces)
-  local out, at = {}, 1
-  for i, size in ipairs(sizes) do
-    out[i] = indent .. b64_encode(state:sub(at, at + size - 1))
-    at = at + size
-  end
-  return before .. table.concat(out, "\n") .. after
+  return before .. encode_state(table.concat(pieces), sizes, lines[1]:match("^%s*")) .. after
 end
 
 -- Superior Drummer keeps its mixer as text in its saved state, one block per mic with
--- a "route output N" line. The text's length is held in the wrappers around it, at
--- these distances before the text and as this much more than its length.
-local SD_LENGTHS = { { 4, ">I4", 0 }, { 156, ">I4", 152 }, { 184, "<I4", 176 }, { 196, "<I4", 192 } }
-local SD_LINE = 96 -- bytes on each full line of state
-
--- The output a mic plays on, by the mic's name. Mics on a matching rule's track; all
--- other mics go to Room. Pairs are counted as in Atlas, 1 being the main output.
+-- a "route output N" line, N counting stereo pairs from 0. Mics on a matching rule's
+-- track; all other mics go to Room.
 local SD_MICS = { { "^Kick", "Kick" }, { "^Snare", "Snare" }, { "^Tom", "Toms" }, { "^Hat", "Hats" },
                   { "^Oh", "OH" }, { "^Ride", "Ride" } }
 function core.superior_track(mic)
@@ -577,55 +579,39 @@ local function superior_mixer(state)
   return start, stop
 end
 
--- Mic name -> output number, as saved. Nil if the chunk has no Superior Drummer.
+-- Mic name -> the pair it plays on, 1 being the main output. Nil if there's no Superior Drummer.
 function core.superior_outputs(chunk)
   local _, lines = plugin_state(chunk, "Superior Drummer")
   if not lines then return nil end
-  local parts = {}
-  for i, line in ipairs(lines) do parts[i] = b64_decode(line:match("%S+")) end
-  local state = table.concat(parts)
+  local state = decode_state(lines)
   local start, stop = superior_mixer(state)
   if not stop then return nil end
   local out = {}
   for mic, value in state:sub(start + 1, stop):gmatch("([^\n{}]+) {\n[^{}]-route output (%-?%d+)") do
-    out[mic] = tonumber(value)
+    out[mic] = tonumber(value) + 1
   end
   return out
 end
 
--- A copy of the chunk with each mic routed by output_of(mic), which returns the number
--- to save. Nil if the state isn't laid out as expected.
-function core.route_superior(chunk, output_of)
+-- A copy of the chunk with each mic on its template track's output; those tracks take
+-- pairs 2 and up, in order. Nil if it can't be done. The text must stay the same length,
+-- because wrappers around it hold its size.
+function core.route_superior(chunk, order)
   local before, lines, after = plugin_state(chunk, "Superior Drummer")
-  if not lines or #lines < 3 then return nil end
-  local indent, parts = lines[1]:match("^%s*"), {}
-  for i, line in ipairs(lines) do parts[i] = b64_decode(line:match("%S+")) end
-  local first, last = parts[1], parts[#parts]
-  local state = table.concat(parts, "", 2, #parts - 1)
-  local whole = first .. state
-  local text = whole:find("PlugVersion", 1, true)
-  if not text or text <= 196 then return nil end
-  local length = string.unpack(">I4", whole, text - 4)
-  for _, field in ipairs(SD_LENGTHS) do
-    if string.unpack(field[2], whole, text - field[1]) ~= length + field[3] then return nil end
-  end
-  local start, stop = superior_mixer(whole)
+  if not lines then return nil end
+  local pair_of = {}
+  for i, name in ipairs(order) do pair_of[name] = i + 1 end
+  local state, sizes = decode_state(lines)
+  local start, stop = superior_mixer(state)
   if not stop then return nil end
-  local routed, count = whole:sub(start + 1, stop):gsub("([^\n{}]+)( {\n[^{}]-route output )%-?%d+",
-    function(mic, middle) return mic .. middle .. output_of(mic) end)
-  if count == 0 then return nil end
-  local changed = whole:sub(1, start) .. routed .. whole:sub(stop + 1)
-  local grown = #changed - #whole
-  for _, field in ipairs(SD_LENGTHS) do
-    local at = text - field[1]
-    changed = changed:sub(1, at - 1) .. string.pack(field[2], length + field[3] + grown) .. changed:sub(at + 4)
-  end
-  local out = { indent .. b64_encode(changed:sub(1, #first)) }
-  for at = #first + 1, #changed, SD_LINE do
-    out[#out + 1] = indent .. b64_encode(changed:sub(at, at + SD_LINE - 1))
-  end
-  out[#out + 1] = indent .. b64_encode(last)
-  return before .. table.concat(out, "\n") .. after
+  local missing = false
+  local routed, count = state:sub(start + 1, stop):gsub("([^\n{}]+)( {\n[^{}]-route output )%-?%d+", function(mic, middle)
+    local pair = pair_of[core.superior_track(mic)]
+    if not pair then missing = true return nil end
+    return mic .. middle .. (pair - 1)
+  end)
+  if count == 0 or missing or #routed ~= stop - start then return nil end
+  return before .. encode_state(state:sub(1, start) .. routed .. state:sub(stop + 1), sizes, lines[1]:match("^%s*")) .. after
 end
 
 -- http.sh writes the HTTP status on the first line and the body after it.

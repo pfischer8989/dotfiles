@@ -125,6 +125,19 @@ local function route_atlas(tr, outputs)
   say("  Atlas pad outputs: " .. (pads and table.concat(pads, " ") or "unreadable"))
 end
 
+-- Puts each of Superior Drummer's mics on its template track's output.
+local function route_superior(tr, order)
+  local _, chunk = R.GetTrackStateChunk(tr, "", false)
+  local routed = core.route_superior(chunk, order)
+  if not routed or not R.SetTrackStateChunk(tr, routed, false) then
+    say("  ! could not set Superior Drummer's outputs")
+    return
+  end
+  local _, saved = R.GetTrackStateChunk(tr, "", false)
+  local mics = core.superior_outputs(saved)
+  say("  Superior Drummer: kick mic on pair " .. tostring(mics and mics["Kick-In"]))
+end
+
 -- Multi-out child: receive stereo pair `pair` (1 = outputs 1/2) from inst.
 local function receive(inst, child, pair)
   local s = R.CreateTrackSend(inst, child)
@@ -173,12 +186,12 @@ end
 local function kit(name, plug, outs)
   return function()
     -- Folder "kit" bus; children receive the instrument's pairs from 3/4 up, and 1/2 is
-    -- for anything left on the main output. Atlas's pads are set here; other kits'
-    -- outputs are assigned inside the plugin.
+    -- for anything left on the main output. The plugin's own outputs are set here too.
     track(name, { color = COLOR.DRUMS, depth = 1, ext = "folder=DRUMS;vca=DRUMS" })
     local inst = track(name:gsub(" Kit$", "") .. " (main 1/2)", { color = COLOR.DRUMS, midi = true, nchan = #outs * 2 + 2 })
     addfx(inst, plug)
     if plug == "atlas" then route_atlas(inst, core.DRUM_KITS[name].outputs) end
+    if plug == "sd3" then route_superior(inst, outs) end
     R.SetMediaTrackInfo_Value(inst, "C_MAINSEND_NCH", 2) -- only 1/2 to the kit bus
     for i, o in ipairs(outs) do
       local ext = (o == "Kick" or o == "Snare") and "sends=Drum Crush:-12" or nil
