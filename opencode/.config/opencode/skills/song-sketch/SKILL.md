@@ -183,3 +183,48 @@ about how the song sounds, and audio tracks are listed as not read. A semitone
 rub is a place to listen, not an error: some of the best dark moments are one.
 Every number you quote must come from the facts file, and every bar number from
 there too.
+
+## Checking a mix
+
+A mix session is `mix-<stamp>.RPP` in the song's folder. Paul mixes in it; you measure
+it and say where to listen. Paul does the EQ, because finding the clash by ear is the
+part he has trouble with. Start the session only if the song has none, or he asks for
+a new one:
+
+```bash
+python3 ~/dotfiles/reaper/Scripts/Empire/empire_sketch/mix.py bounce "<song>"
+```
+
+Then, every pass, print what's saved and measure it:
+
+```bash
+python3 ~/dotfiles/reaper/Scripts/Empire/empire_sketch/mix.py print "<song>"
+~/.venvs/reaper-audio/bin/python ~/dotfiles/reaper/Scripts/Empire/empire_sketch/mix_check.py <pass folder> --previous <last pass folder>
+```
+
+Leave out `--previous` if there's no earlier pass. If `mix.py` says `STILL RUNNING`, run
+`mix.py wait`. If it says the session has unsaved changes, report that and stop: Paul
+has to save it. Don't edit project files yourself. Read `mix-check.md` and
+`mix-check.json` from the pass folder and copy both into your artifacts folder.
+
+The report ranks every clash it can find, and most of a full arrangement overlaps
+somewhere. Your job is to pick what's worth his time:
+
+- Answer his note first, if he named a problem.
+- Lead with low-end clashes between the track pairs that carry the song, such as kick
+  and bass, even when a longer overlap scores higher. Score only ranks within a report.
+- Give about five, each with: the two tracks, the frequencies, the bars by section,
+  who covers whom and by how much, and each track's peak and notes in range when
+  they're there.
+- Say how to hear it: which tracks to solo, which bars to loop.
+- Then one line on what he could try, marked as a suggestion, with a reason from the
+  numbers: EQ, dynamic EQ, sidechain, or moving a note. EQ changes how loud a frequency
+  is, not where a sustained note's fundamental sits.
+- On a later pass, start with what got better, worse or stayed the same. Before any
+  suggestion, say what a change to the mix did, and don't credit him or the mix with a
+  change the numbers don't show.
+
+It measures and doesn't hear. Say so, and never claim how anything sounds. Reverbs and
+delays add to the level in the mix, but clashes with them aren't listed. Bus plugins
+and bus automation aren't in the track prints: only the bus faders are counted, and
+`mix.wav` is the only print through the buses and master.

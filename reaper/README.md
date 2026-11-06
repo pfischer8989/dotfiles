@@ -58,6 +58,19 @@ ln -sfn ~/dotfiles/reaper/Scripts/Empire ~/Library/Application\ Support/REAPER/S
   from the newest one with a list of changes (another option, cleared bars, added
   notes) through **Empire Apply Changes**. The old master isn't touched. Another
   pass on a Song Sketch review, with a note saying what to try, uses it.
+- **Empire Mix**, through `empire_sketch/mix.py bounce <song>`: prints the newest
+  master's tracks after their plugins and fader, into a new `mix-<stamp>.RPP` in its own
+  tab. Those tracks play audio at unity; buses, returns, sends, VCAs and the master
+  chain stay live, so bus effects can still be changed. The master isn't touched.
+  If Atlas plays everything on its main output, as the template does now, the kit
+  prints once per drum onto the output tracks, with their plugins bypassed and sends
+  muted, to sound like the master. Each drum's notes are muted out, so effects inside
+  Atlas are heard per drum.
+- `mix.py print <song>` prints the saved session for measuring, into
+  `mix-<stamp>/passes/pass-<n>/`. `empire_sketch/mix_check.py <pass> [--previous <pass>]`
+  reports where tracks clash: pair, frequencies, bars, who covers whom, and the notes
+  in range. It needs numpy: `python3 -m venv ~/.venvs/reaper-audio &&
+  ~/.venvs/reaper-audio/bin/pip install numpy`. Tests: `test_mix.py`, `test_mix_check.py`.
 - `empire_sketch/check_sketch.py` checks a sketch and installs it for the build;
   `empire_sketch/read_master.py` turns a saved master into facts per section. The
   Song Sketch and Song Analysis workflows use both, through the `song-sketch` skill.
