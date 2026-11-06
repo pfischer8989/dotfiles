@@ -8,8 +8,8 @@
 --   Channel Strip   (synth and bass tracks: AMEK 9099 -> Presswerk)
 --   Guitar Amp      (guitar tracks: Neural Amp Modeler; no Archetype Plini X
 --                    default: its AU crashed REAPER when a build removed it)
---   Bus             (every folder bus: Punish -> Curves Resolve)
---   Mix Bus         (master: Avalon AD2055 -> AD2077 -> LANDR Mastering Pro)
+--   Bus             (every folder bus but FX: AMEK 9099 -> Presswerk -> Punish -> Curves Resolve)
+--   Mix Bus         (master: AMEK 9099 -> Presswerk -> Avalon AD2055 -> AD2077 -> LANDR Mastering Pro)
 --   Verb Short, Verb Long, Shimmer, Delay, Drum Crush   (the returns)
 --
 -- TB Equalizer Pro goes last on every instrument track, after any saved chain.
@@ -173,7 +173,8 @@ end
 -- ---------------------------------------------------------------- templates
 
 local STRIP = { "amek", "presswerk" }
-local BUS = { "punish", "resolve" }
+local BUS = { "amek", "presswerk", "punish", "resolve" }
+local MASTER = { "amek", "presswerk", "ad2055", "ad2077", "landr" }
 
 local function synth(name, plug, folder, sends)
   return function()
@@ -274,12 +275,12 @@ local function project()
   for _, s in ipairs(SECTIONS) do
     chain(track(s, { color = COLOR[s] }), "Bus", BUS)
   end
-  chain(track("FX", { color = COLOR.FX, depth = 1 }), "Bus", BUS)
+  track("FX", { color = COLOR.FX, depth = 1 })
   for i, r in ipairs(RETURNS) do
     local t = track(r[1], { color = COLOR.FX, depth = (i == #RETURNS) and -1 or 0 })
     if not chain(t, r[1], r[2]) then full_wet(t) end
   end
-  chain(R.GetMasterTrack(0), "Mix Bus", { "ad2055", "ad2077", "landr" })
+  chain(R.GetMasterTrack(0), "Mix Bus", MASTER)
   R.Main_SaveProjectEx(0, PT .. "/Empire Song.RPP", 0)
   say("project template: Empire Song")
 end
