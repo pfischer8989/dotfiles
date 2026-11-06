@@ -147,7 +147,7 @@ local function render(tracks, folder, stop_at, with_mix)
   end
   for _, t in ipairs(tracks) do R.SetTrackSelected(t, true) end
 
-  local numbers = { RENDER_SETTINGS = with_mix and 1 or 2, RENDER_BOUNDSFLAG = 0, RENDER_STARTPOS = 0,
+  local numbers = { RENDER_SETTINGS = with_mix and 1 or 3, RENDER_BOUNDSFLAG = 0, RENDER_STARTPOS = 0,
     RENDER_ENDPOS = stop_at + TAIL_SECONDS, RENDER_CHANNELS = 2, RENDER_SRATE = 0, RENDER_ADDTOPROJ = 0,
     RENDER_NORMALIZE = 0, RENDER_DITHER = 0, RENDER_TAILFLAG = 0 }
   local strings = { RENDER_FILE = folder, RENDER_PATTERN = "$tracknumber", RENDER_FORMAT = FLOAT_WAV }
