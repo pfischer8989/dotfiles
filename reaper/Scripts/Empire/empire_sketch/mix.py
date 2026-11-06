@@ -104,6 +104,12 @@ def run(request, root, running=is_running, start=launch, wait=WAIT_SECONDS, paus
     return wait_for(result, wait, pause)
 
 
+def discard(request):
+    """A failed bounce leaves nothing behind, so it can't be taken for the newest session."""
+    os.remove(request["mix"])
+    shutil.rmtree(request["mix"][: -len(".RPP")])
+
+
 def finish(answer):
     if answer is None:
         print("STILL RUNNING: REAPER is working. Run `mix.py wait`, and don't start another job.")
@@ -126,7 +132,11 @@ def main():
         if args == ["wait"]:
             finish(wait_for(os.path.join(root, "mix-result.json")))
         elif len(args) in (2, 3) and args[0] == "bounce":
-            finish(run(bounce_request(args[1], root, args[2] if len(args) == 3 else None), root))
+            request = bounce_request(args[1], root, args[2] if len(args) == 3 else None)
+            answer = run(request, root)
+            if answer is not None and not answer.get("ok"):
+                discard(request)
+            finish(answer)
         elif len(args) == 2 and args[0] == "print":
             finish(run(print_request(args[1], root), root))
         else:

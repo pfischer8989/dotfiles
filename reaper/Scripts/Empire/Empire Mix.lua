@@ -142,7 +142,7 @@ local function render(tracks, folder, stop_at, with_mix)
   local numbers = { RENDER_SETTINGS = with_mix and 1 or 2, RENDER_BOUNDSFLAG = 0, RENDER_STARTPOS = 0,
     RENDER_ENDPOS = stop_at + TAIL_SECONDS, RENDER_CHANNELS = 2, RENDER_SRATE = 0, RENDER_ADDTOPROJ = 0,
     RENDER_NORMALIZE = 0, RENDER_DITHER = 0, RENDER_TAILFLAG = 0 }
-  local strings = { RENDER_FILE = folder, RENDER_PATTERN = "$tracknumber-$track", RENDER_FORMAT = FLOAT_WAV }
+  local strings = { RENDER_FILE = folder, RENDER_PATTERN = "$tracknumber", RENDER_FORMAT = FLOAT_WAV }
   local old_numbers, old_strings = {}, {}
   for key, value in pairs(numbers) do
     old_numbers[key] = R.GetSetProjectInfo(0, key, 0, false)
@@ -161,12 +161,15 @@ local function render(tracks, folder, stop_at, with_mix)
   for i = 0, R.CountTracks(0) - 1 do R.SetTrackSelected(R.GetTrack(0, i), selected[i]) end
 
   local wanted = {}
-  for _, t in ipairs(tracks) do wanted[math.tointeger(R.GetMediaTrackInfo_Value(t, "IP_TRACKNUMBER"))] = true end
+  for _, t in ipairs(tracks) do wanted[math.tointeger(R.GetMediaTrackInfo_Value(t, "IP_TRACKNUMBER"))] = name_of(t) end
   local files, mix = {}, nil
   for _, name in ipairs(wav_files(folder)) do
-    local number = math.tointeger(tonumber(name:match("^(%d+)%-") or ""))
+    local number = math.tointeger(tonumber(name:match("^(%d+)%.") or ""))
     if number and wanted[number] then
-      files[number] = folder .. "/" .. name
+      -- Named only now: REAPER reads a "/" in a pattern's track name as a folder.
+      local named = string.format("%s/%02d %s.wav", folder, number, wanted[number]:gsub("[^%w%- ]", "_"))
+      os.rename(folder .. "/" .. name, named)
+      files[number] = named
     elseif with_mix then
       mix = folder .. "/mix.wav"
       os.rename(folder .. "/" .. name, mix)
@@ -210,6 +213,13 @@ local function swap_to_audio(track, path)
   R.SetMediaItemInfo_Value(item, "D_LENGTH", (R.GetMediaSourceLength(source)))
 end
 
+-- A bounce that can't finish leaves no tab behind; mix.py removes its files.
+local function give_up(message)
+  R.Main_SaveProject(0, false)
+  R.Main_OnCommand(40860, 0) -- close this tab
+  answer({ ok = false, message = message })
+end
+
 local function bounce(request)
   local base = find_tab(request.base)
   if base and R.IsProjectDirty(base) == 1 then
@@ -227,7 +237,7 @@ local function bounce(request)
     local t = R.GetTrack(0, i)
     if role_of(t) == "source" then tracks[#tracks + 1] = t end
   end
-  if #tracks == 0 then return answer({ ok = false, message = "the master has nothing to print" }) end
+  if #tracks == 0 then return give_up("the master has nothing to print") end
 
   local started = R.time_precise()
   local _, song_end = song_times()
@@ -238,7 +248,7 @@ local function bounce(request)
     if not file then missing[#missing + 1] = name_of(t) end
   end
   if #missing > 0 then
-    return answer({ ok = false, message = "REAPER didn't print " .. table.concat(missing, ", ") })
+    return give_up("REAPER didn't print " .. table.concat(missing, ", "))
   end
 
   R.Undo_BeginBlock()

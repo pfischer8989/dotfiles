@@ -33,6 +33,13 @@ class Requests(unittest.TestCase):
             self.assertEqual(f.read(), "master-20260102-000000.RPP")
         self.assertTrue(os.path.isdir(request["stems"]))
 
+    def test_a_failed_bounce_leaves_nothing_behind(self):
+        request = self.bounce()
+        mix.discard(request)
+        self.assertFalse(os.path.exists(request["mix"]))
+        self.assertFalse(os.path.exists(request["mix"][: -len(".RPP")]))
+        self.assertIsNone(mix.newest(self.song, "mix"))
+
     def test_bounce_needs_a_master(self):
         with self.assertRaises(mix.MixError):
             mix.bounce_request("Nothing Here", self.root)
