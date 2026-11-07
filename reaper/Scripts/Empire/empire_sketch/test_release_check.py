@@ -68,7 +68,9 @@ class Peaks(unittest.TestCase):
     def test_true_peak_finds_the_peak_between_samples(self):
         # A quarter-rate sine at 45 degrees never lands on its crest: the samples
         # read 0.707 of it, so the sample peak is 3 dB low.
-        x = stereo(sine(RATE / 4, 2, 1.0, np.pi / 4))
+        # The fade stops a hard start and end ringing above the tone's own peak.
+        tone = sine(RATE / 4, 2, 1.0, np.pi / 4)
+        x = stereo(tone * np.hanning(len(tone)) ** 0.1)
         self.assertAlmostEqual(rc.db(np.abs(x).max()), -3.01, delta=0.02)
         self.assertAlmostEqual(rc.db(rc.true_peak(x)), 0.0, delta=0.05)
 
