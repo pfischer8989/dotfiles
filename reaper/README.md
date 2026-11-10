@@ -14,11 +14,18 @@ ln -sfn ~/dotfiles/reaper/Scripts/Empire ~/Library/Application\ Support/REAPER/S
   and Superior Drummer mic's output in the plugin's saved state, because neither
   has a parameter for it.
   Track templates are saved in category folders under `TrackTemplates/Empire/`:
-  Drums, Bass, Guitars, Synths, Pads, Drones, Samplers, Audio and FX Bus (the
-  returns, plus extra ones like Verb Huge, Plate, Echo, Parallel Saturation,
-  Crystal and Wide). A template is still known by its name alone (`Atlas Kit`,
-  `Synth - Hive`), so names stay unique across folders. A rebuild moves
-  templates left loose in `TrackTemplates/Empire/` to `Empire-backup/`.
+  Drums, Bass, Guitars, Synths, Pads, Drones, Samplers (Kontakt 8, Komplete
+  Kontrol), Vocals, Audio and FX Bus (the returns, plus extra ones like Verb
+  Huge, Plate, Echo, Parallel Saturation, Crystal and Wide). Empire Song has a
+  VOCALS bus and VCA. A template is still known by its name alone (`Atlas Kit`,
+  `Synth - Hive`), so names stay unique across folders. A rebuild moves any
+  template it didn't make to `Empire-backup/`.
+  **Your own instruments**: load one (a Komplete Kontrol or Kontakt instrument,
+  a synth patch), then save the track's FX chain as
+  `FXChains/Empire/Instruments/<Folder>/<Name>.RfxChain` (e.g. `Pads/Una
+  Corda`); the next build makes a `<Folder>/<Name>` template from it, with the
+  channel strip after it and the folder's bus. Straight in `Instruments/`, it
+  goes in Samplers.
 - **Empire Insert Track**: load it into the action list and give it a
   shortcut. Picks a template from a menu with a submenu per folder, moves it
   into its folder bus (an FX Bus template goes in the FX folder), joins the

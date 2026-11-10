@@ -10,7 +10,14 @@
 --                    default: its AU crashed REAPER when a build removed it)
 --   Bus             (every folder bus but FX: AMEK 9099 -> Presswerk -> Punish -> Curves Resolve)
 --   Mix Bus         (master: AMEK 9099 -> Presswerk -> Avalon AD2055 -> AD2077 -> LANDR Mastering Pro)
+--   Vocal Chain     (vocal tracks: AMEK 9099 -> Presswerk)
 --   Verb Short, Verb Long, Shimmer, Delay, Drum Crush   (the returns)
+--
+-- Instruments you set up inside a plugin (a Komplete Kontrol or Kontakt
+-- instrument, a favourite synth patch): save the track's FX chain as
+-- FXChains/Empire/Instruments/<Folder>/<Name>.RfxChain and the build makes a
+-- track template <Folder>/<Name> from it, with the channel strip after it.
+-- A chain saved straight in Instruments/ goes in the Samplers folder.
 --
 -- Every instrument track has bx_console AMEK 9099, with TB Equalizer Pro last, after
 -- any saved chain. Presswerk is only on synth tracks, since the console has a compressor.
@@ -23,8 +30,9 @@
 -- REAPER's own template menu shows as submenus. A template is still known by
 -- its name alone ("Atlas Kit", "Synth - Hive"): sketches and setups name it, and
 -- Insert Track finds it in whichever folder it is. Names must stay unique.
--- Templates left loose in TrackTemplates/Empire/ by older builds are moved to
--- Empire-backup/ in the resource folder.
+-- Any template under TrackTemplates/Empire/ that this build didn't make (left
+-- by an older build, or one dropped from the list) is moved to Empire-backup/
+-- in the resource folder.
 
 local R = reaper
 local HERE = ({ R.get_action_context() })[2]:match("^(.*)[/\\]")
@@ -53,9 +61,11 @@ local COLOR = {
   DRUMS = rgb(214, 84, 64), PERCUSSION = rgb(226, 120, 90), BASS = rgb(170, 90, 150),
   GUITARS = rgb(222, 160, 60), SYNTHS = rgb(80, 140, 220), SAMPLES = rgb(90, 175, 200),
   SFX = rgb(200, 190, 90), DRONES = rgb(110, 190, 165), FX = rgb(150, 110, 200),
+  VOCALS = rgb(230, 110, 160),
 }
--- In track order, with VCA groups 1..8. FX comes after them, with no VCA.
-local SECTIONS = { "DRUMS", "PERCUSSION", "BASS", "GUITARS", "SYNTHS", "SAMPLES", "SFX", "DRONES" }
+-- In track order, with VCA groups 1..9 (VOCALS came last, so the others keep
+-- their group numbers). FX comes after them, with no VCA.
+local SECTIONS = { "DRUMS", "PERCUSSION", "BASS", "GUITARS", "SYNTHS", "SAMPLES", "SFX", "DRONES", "VOCALS" }
 
 local PLUG = {
   amek = "VST3:bx_console AMEK 9099 (Plugin Alliance)",
@@ -73,11 +83,12 @@ local PLUG = {
   bazille = "VST3:Bazille (u-he)",
   repro1 = "VST3:Repro-1 (u-he)",
   repro5 = "VST3:Repro-5 (u-he)",
-  je8086 = "VST3:JE8086 (The Usual Suspects)",
   zebralette3 = "VST3:Zebralette3 (u-he)",
   zebrahz = "VST3:ZebraHZ (u-he)",
   synthmaster2 = { "VST3:SynthMaster 2 (KV331 Audio)", "VST3:SynthMaster2", "AUi:KV331 Audio: SynthMaster 2" },
   kontakt8 = "VST3:Kontakt 8 (Native Instruments)",
+  komplete = "VST3:Komplete Kontrol (Native Instruments)",
+  midiguitar = "VST3:MIDI Guitar 3 (Jam Origin)",
   engl = "VST3:ENGL Savage 120 (Plugin Alliance)",
   fuchs = "VST3:Fuchs Overdrive Supreme 50 (Plugin Alliance)",
   ampcraft = "VST3:AmpCraft - 1992 (Kazrog)",
@@ -205,24 +216,46 @@ local function save_template(folder, name)
   say("track template: " .. folder .. "/" .. name)
 end
 
--- Older builds saved every template loose in TrackTemplates/Empire/: move them
--- out of REAPER's menu (to Empire-backup/), so each shows once, in its folder.
-local function move_loose_templates()
-  local backup = RES .. "/Empire-backup/TrackTemplates-" .. os.date("%Y%m%d-%H%M%S")
-  local moved, i = {}, 0
+-- Every template file under TrackTemplates/Empire/, as "Folder/Name" (or
+-- "Name" when it's loose in Empire/ itself).
+local function template_files()
+  local out = {}
+  local function scan(folder)
+    local dir = folder == "" and TT or TT .. "/" .. folder
+    local i = 0
+    while true do
+      local f = R.EnumerateFiles(dir, i)
+      if not f then break end
+      local n = f:match("^(.*)%.RTrackTemplate$")
+      if n then out[#out + 1] = folder == "" and n or folder .. "/" .. n end
+      i = i + 1
+    end
+  end
+  scan("")
+  local i = 0
   while true do
-    local f = R.EnumerateFiles(TT, i)
-    if not f then break end
-    if f:match("%.RTrackTemplate$") then moved[#moved + 1] = f end
+    local d = R.EnumerateSubdirectories(TT, i)
+    if not d then break end
+    scan(d)
     i = i + 1
   end
-  if #moved == 0 then return end
-  R.RecursiveCreateDirectory(backup, 0)
-  for _, f in ipairs(moved) do
-    local ok, err = os.rename(TT .. "/" .. f, backup .. "/" .. f)
-    if not ok then say("  ! could not move " .. f .. ": " .. tostring(err)) end
+  return out
+end
+
+-- Moves every template this build didn't make out of REAPER's menu, to
+-- Empire-backup/, so each template shows once and dropped ones disappear.
+local function sweep(built)
+  local backup = RES .. "/Empire-backup/TrackTemplates-" .. os.date("%Y%m%d-%H%M%S")
+  local moved = 0
+  for _, rel in ipairs(template_files()) do
+    if not built[rel] then
+      local dest = backup .. "/" .. rel .. ".RTrackTemplate"
+      R.RecursiveCreateDirectory(dest:match("^(.*)/"), 0)
+      local ok, err = os.rename(TT .. "/" .. rel .. ".RTrackTemplate", dest)
+      if ok then moved = moved + 1 else say("  ! could not move " .. rel .. ": " .. tostring(err)) end
+    end
   end
-  say("moved " .. #moved .. " loose templates to " .. backup)
+  if moved > 0 then say("moved " .. moved .. " old templates to " .. backup) end
 end
 
 -- ---------------------------------------------------------------- templates
@@ -267,6 +300,61 @@ local function fxbus(name, plugs)
     local t = track(name, { color = COLOR.FX, ext = "folder=FX" })
     if not chain(t, name, plugs) then full_wet(t) end
   end
+end
+
+-- A vocal mic on input 1, armed, through the vocal chain.
+local function vocal(name, sends, o)
+  o = o or {}
+  return function()
+    local t = track(name, { color = COLOR.VOCALS, input = true, pan = o.pan,
+      ext = "folder=VOCALS;vca=VOCALS;sends=" .. sends .. ";arm=1" })
+    chain(t, "Vocal Chain", { "amek", "presswerk" })
+    addfx(t, "eq")
+    return t
+  end
+end
+
+-- An instrument from a chain you saved (see the top): the chain, then the strip.
+local function saved_instrument(name, file, folder)
+  return function()
+    local t = track(name, { color = COLOR[folder], midi = true,
+      ext = "folder=" .. folder .. ";vca=" .. folder .. ";sends=Verb Long:-20,Delay:-24" })
+    if R.TrackFX_AddByName(t, file, false, -1) < 0 then say("  ! could not load chain " .. file) end
+    chain(t, "Channel Strip", STRIP)
+    addfx(t, "eq")
+  end
+end
+
+-- Which bus a saved instrument's folder lands on.
+local FOLDER_BUS = { Drums = "DRUMS", Bass = "BASS", Guitars = "GUITARS", Synths = "SYNTHS",
+  Pads = "SYNTHS", Samplers = "SYNTHS", Drones = "DRONES", Vocals = "VOCALS", Audio = "SAMPLES" }
+
+-- Templates from FXChains/Empire/Instruments/[<Folder>/]<Name>.RfxChain.
+local function saved_instruments()
+  local out, dir = {}, CH .. "/Instruments"
+  local function scan(folder)
+    local d = folder == "" and dir or dir .. "/" .. folder
+    local i = 0
+    while true do
+      local f = R.EnumerateFiles(d, i)
+      if not f then break end
+      local n = f:match("^(.*)%.RfxChain$")
+      if n then
+        local target = folder == "" and "Samplers" or folder
+        out[#out + 1] = { target, n, saved_instrument(n, d .. "/" .. f, FOLDER_BUS[target] or "SYNTHS") }
+      end
+      i = i + 1
+    end
+  end
+  scan("")
+  local i = 0
+  while true do
+    local sub = R.EnumerateSubdirectories(dir, i)
+    if not sub then break end
+    scan(sub)
+    i = i + 1
+  end
+  return out
 end
 
 -- A reference mix: plays straight to the outputs, past the master chain.
@@ -329,6 +417,8 @@ local TEMPLATES = {
   { "Guitars", "Guitar - AmpCraft 1992", guitar("Guitar", "ampcraft", "GUITARS", GTR) },
   { "Guitars", "Guitar - Ampbox", guitar("Guitar", "ampbox", "GUITARS", GTR) },
   { "Guitars", "Guitar - TONE3000", guitar("Guitar", "tone3000", "GUITARS", GTR) },
+  -- Guitar to MIDI: its own sounds, or the MIDI it sends on to an instrument.
+  { "Guitars", "Guitar - MIDI Guitar 3", guitar("MIDI Guitar", "midiguitar", "GUITARS", LEAD) },
 
   { "Synths", "Synth - Zebra 3", synth("Zebra 3", "zebra3", "SYNTHS", LEAD) },
   { "Synths", "Synth - Diva", synth("Diva", "diva", "SYNTHS", LEAD) },
@@ -337,7 +427,6 @@ local TEMPLATES = {
   { "Synths", "Synth - Bazille", synth("Bazille", "bazille", "SYNTHS", LEAD) },
   { "Synths", "Synth - Repro-1", synth("Repro-1", "repro1", "SYNTHS", LEAD) },
   { "Synths", "Synth - Repro-5", synth("Repro-5", "repro5", "SYNTHS", LEAD) },
-  { "Synths", "Synth - JE8086", synth("JE8086", "je8086", "SYNTHS", LEAD) },
   { "Synths", "Synth - Zebralette 3", synth("Zebralette 3", "zebralette3", "SYNTHS", LEAD) },
   { "Synths", "Synth - Zebra HZ", synth("Zebra HZ", "zebrahz", "SYNTHS", LEAD) },
   { "Synths", "Synth - SynthMaster 2", synth("SynthMaster 2", "synthmaster2", "SYNTHS", LEAD) },
@@ -352,8 +441,20 @@ local TEMPLATES = {
   { "Drones", "Drone - Pigments", synth("Drone", "pigments", "DRONES", DRONE) },
   { "Drones", "Ambient Guitar - NAM", guitar("Ambient Gtr", "nam", "DRONES", "Shimmer:-10,Verb Long:-12,Delay:-14") },
 
-  -- An empty sampler for any library; it lands with the synths.
+  -- Empty hosts for any NI library; they land with the synths. Save a loaded
+  -- instrument's chain in FXChains/Empire/Instruments/ to get its own template.
   { "Samplers", "Kontakt 8", synth("Kontakt", "kontakt8", "SYNTHS", LEAD) },
+  { "Samplers", "Komplete Kontrol", synth("Komplete Kontrol", "komplete", "SYNTHS", LEAD) },
+
+  { "Vocals", "Vocal - Lead", vocal("Lead Vox", "Plate:-16,Verb Long:-20,Delay:-22") },
+  { "Vocals", "Vocal - Double", function()
+      -- Two takes of the lead, panned; record L first, then arm R.
+      vocal("Vox Dbl L", "Plate:-20,Verb Long:-22", { pan = -0.6 })()
+      local r = vocal("Vox Dbl R", "Plate:-20,Verb Long:-22", { pan = 0.6 })()
+      R.GetSetMediaTrackInfo_String(r, "P_EXT:empire", "sends=Plate:-20,Verb Long:-22", true)
+      R.SetMediaTrackInfo_Value(r, "I_RECMON", 0)
+    end },
+  { "Vocals", "Vocal - Backing", vocal("Backing Vox", "Verb Long:-16,Delay:-20") },
 
   { "Audio", "Samples - Audio", audio("Samples", "SAMPLES") },
   { "Audio", "SFX - Audio", audio("SFX", "SFX") },
@@ -419,15 +520,17 @@ tab:close()
 R.Main_OnCommand(40859, 0) -- new project tab
 R.Main_openProject("noprompt:" .. scratch) -- has a file, so it can close without asking
 R.PreventUIRefresh(1)
-move_loose_templates()
-local seen = {}
+for _, t in ipairs(saved_instruments()) do TEMPLATES[#TEMPLATES + 1] = t end
+local seen, built = {}, {}
 for _, t in ipairs(TEMPLATES) do
-  if seen[t[2]] then say("  ! two templates are called " .. t[2]) end
+  if seen[t[2]] then say("  ! two templates are called " .. t[2] .. "; the later one wins") end
   seen[t[2]] = true
+  built[t[1] .. "/" .. t[2]] = true
   clear()
   t[3]()
   save_template(t[1], t[2])
 end
+sweep(built)
 clear()
 project()
 R.PreventUIRefresh(-1)

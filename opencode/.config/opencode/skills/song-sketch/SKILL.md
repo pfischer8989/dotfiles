@@ -61,7 +61,7 @@ thing and keep the rest. Keep the script with your artifacts.
   - bass: `Bass - Hive`, `Bass - Zebra 3`, `Bass - Diva`, `Bass - Pigments`,
     `Bass - Repro-1`;
   - synths: `Synth - Hive`, `Synth - Zebra 3`, `Synth - Diva`, `Synth - Pigments`,
-    `Synth - Bazille`, `Synth - Repro-1`, `Synth - Repro-5`, `Synth - JE8086`,
+    `Synth - Bazille`, `Synth - Repro-1`, `Synth - Repro-5`,
     `Synth - Zebralette 3`, `Synth - Zebra HZ`, `Synth - SynthMaster 2`;
   - pads: `Pad - Diva`, `Pad - Zebra 3`, `Pad - Pigments`, `Pad - Hive`;
   - drones: `Drone - Zebra 3`, `Drone - Zebra HZ`, `Drone - Pigments`.

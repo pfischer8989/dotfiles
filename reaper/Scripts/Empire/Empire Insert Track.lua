@@ -1,6 +1,6 @@
 -- Empire Insert Track
 -- Pick an Empire track template from a menu at the mouse; it's inserted into
--- its folder bus (DRUMS, PERCUSSION, BASS, GUITARS, SYNTHS, SAMPLES, SFX, DRONES), joins that section's VCA
+-- its folder bus (DRUMS, PERCUSSION, BASS, GUITARS, SYNTHS, SAMPLES, SFX, DRONES, VOCALS), joins that section's VCA
 -- group, gets its sends to the returns (Verb Short, Verb Long, Shimmer, Delay,
 -- Drum Crush) and is armed if it records audio. Built for the "Empire Song"
 -- project template; in other projects whatever it can't find is skipped.
