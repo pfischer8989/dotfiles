@@ -57,24 +57,39 @@ thing and keep the rest. Keep the script with your artifacts.
 - `template` is the REAPER track template for the part. Use the names in the
   brief; several parts can share one. Use the name alone (the build finds the
   folder). Available for MIDI parts:
-  - drums: `Atlas Kit` (the drum part's default);
+  - drums: `Atlas Kit` (electronic; the drum part's default), `Superior Drummer
+    Kit` (acoustic);
   - bass: `Bass - Hive`, `Bass - Zebra 3`, `Bass - Diva`, `Bass - Pigments`,
     `Bass - Repro-1`;
   - synths: `Synth - Hive`, `Synth - Zebra 3`, `Synth - Diva`, `Synth - Pigments`,
     `Synth - Bazille`, `Synth - Repro-1`, `Synth - Repro-5`,
     `Synth - Zebralette 3`, `Synth - Zebra HZ`, `Synth - SynthMaster 2`;
   - pads: `Pad - Diva`, `Pad - Zebra 3`, `Pad - Pigments`, `Pad - Hive`;
-  - drones: `Drone - Zebra 3`, `Drone - Zebra HZ`, `Drone - Pigments`.
+  - drones: `Drone - Zebra 3`, `Drone - Zebra HZ`, `Drone - Pigments`;
+  - samplers: `Kontakt 8`, `Komplete Kontrol`. They load empty: Paul loads the
+    library, so write for what the brief says it will be (piano, strings,
+    choir) and keep to that instrument's real range. A template named after a
+    saved instrument (in the Samplers folder, or any other) loads with it.
+
+  Guitar, bass guitar and vocal templates record audio, so a sketch can't play
+  them. When the brief wants a guitar part, write it as a MIDI guide on the
+  synth template it names (a clean, plain sound), so Paul can learn it or play
+  against it, then record the real thing on a guitar track.
 
   The synths load with their init sound, so prefer the ones the brief names. A
   bass part uses a `Bass -` template, so it lands on the BASS bus, unless the
   brief names another.
 - A part that doesn't play in a section has no clips there. A part that does
   has exactly one clip per option.
-- The drum part must be named `Drums` and use General MIDI notes: kick 36, rim
-  37, snare 38, clap 39, closed hat 42, open hat 46, toms 45, 47 and 48, crash
-  49, ride 51, shaker 70. Always write these, whatever the kit: the build moves
-  them to the kit's own notes. Atlas has one tom row, so all toms land together.
+- A drum part is named `Drums`, or `Drums <something>` when there's more than
+  one kit (`Drums Live` on `Superior Drummer Kit` next to `Drums` on `Atlas
+  Kit`), and uses General MIDI notes: kick 36, rim 37, snare 38, clap 39,
+  closed hat 42, open hat 46, toms 45, 47 and 48, crash 49, ride 51, shaker 70.
+  Always write these, whatever the kit: the build moves them to the kit's own
+  notes. Atlas has one tom row, so all toms land together; Superior plays them
+  as written. With two kits, give them different jobs (one keeps time, the
+  other plays fills, toms and cymbals, or takes over in a section) so any pick
+  of one works under any pick of the other, and don't stack two kicks.
 
 C4 is pitch 60 here: C#2 is 37, about 69 Hz.
 

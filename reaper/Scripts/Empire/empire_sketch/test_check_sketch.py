@@ -93,6 +93,25 @@ with tempfile.TemporaryDirectory() as root:
     cs.install(path, "Goa Sketch 2", root)
     check("old one is kept", len(os.listdir(os.path.dirname(target))), 2)
 
+# A second kit: a part named "Drums Live" on Superior plays GM drum notes too.
+d = doc()
+d["parts"].append({"name": "Drums Live", "template": "Superior Drummer Kit"})
+d["clips"] += [{"section": "Drop", "part": "Drums Live", "option": o, "label": "live " + o,
+                "notes": [[0, p, 0, 240, 100]]} for o, p in (("A", 38), ("B", 42))]
+check("second kit's drum notes pass the key check", [x for x in cs.problems(d) if "Drums Live" in x], [])
+d["clips"][-1]["notes"] = [[0, 61, 0, 240, 100]]
+check("second kit still needs drum notes", any("Drums Live" in x and "drum note" in x for x in cs.problems(d)), True)
+
+# Harmonic major: A natural is in C# harmonic major, A# isn't.
+d = doc()
+d["setup"]["scale"] = "harmonic major"
+d["clips"][2]["notes"] = [[0, 57, 0, 240, 100]]     # A3
+d["clips"][3]["notes"] = [[0, 58, 0, 240, 100]]     # A#3
+probs = cs.problems(d)
+check("harmonic major is a scale", any("unknown scale" in x for x in probs), False)
+check("harmonic major's flat 6 is in key", any("Drop/Bass/A" in x for x in probs), False)
+check("its natural 6 isn't", any("Drop/Bass/B" in x and "outside the key" in x for x in probs), True)
+
 if failed:
     print("\n".join("FAIL " + f for f in failed))
     sys.exit(1)

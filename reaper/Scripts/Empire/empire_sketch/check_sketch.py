@@ -24,6 +24,22 @@ RING_WARNING = 0.5
 SKETCHES = "~/.empire/reaper/sketches"
 
 
+KIT_TEMPLATES = {"Atlas Kit", "Superior Drummer Kit"}
+
+
+def drum_parts(doc):
+    """Parts that play a drum kit: named Drums or "Drums <something>", or on a
+    kit template. Their notes are General MIDI drum notes."""
+    out = set()
+    for p in doc.get("parts") or []:
+        if not isinstance(p, dict):
+            continue
+        name = str(p.get("name") or "")
+        if name == "Drums" or name.startswith("Drums ") or p.get("template") in KIT_TEMPLATES:
+            out.add(name)
+    return out
+
+
 def is_int(v):
     return isinstance(v, int) and not isinstance(v, bool)
 
@@ -95,7 +111,7 @@ def problems(doc):
         if not notes:
             out.append(f"{where}: no notes")
             continue
-        drums = clip.get("part") == "Drums"
+        drums = clip.get("part") in drum_parts(doc)
         for n in notes:
             if not (isinstance(n, list) and len(n) == 5 and all(is_int(x) for x in n)):
                 out.append(f"{where}: a note isn't [start, pitch, channel, length, velocity] in whole numbers")
@@ -144,7 +160,7 @@ def warnings(doc):
         if s["bars"] % loop_bars:
             out.append(f"{s['name']}: {s['bars']} bars isn't a whole number of {loop_bars}-bar loops")
     for section in {c["section"] for c in doc["clips"]}:
-        kicks = {n[0] for c in doc["clips"] if c["section"] == section and c["part"] == "Drums"
+        kicks = {n[0] for c in doc["clips"] if c["section"] == section and c["part"] in drum_parts(doc)
                  for n in c["notes"] if n[1] in KICKS}
         for c in doc["clips"]:
             if c["section"] == section and c["part"] == "Bass":

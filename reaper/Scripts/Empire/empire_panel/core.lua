@@ -254,7 +254,8 @@ end
 core.KEYS = { "C", "C#", "Db", "D", "D#", "Eb", "E", "F", "F#", "Gb", "G", "G#", "Ab", "A", "A#", "Bb", "B", "Cb" }
 local ROOTS = { 0, 1, 1, 2, 3, 3, 4, 5, 6, 6, 7, 8, 8, 9, 10, 10, 11, 11 }
 core.SCALES = { "minor", "major", "harmonic minor", "melodic minor", "dorian", "phrygian",
-                "phrygian dominant", "lydian", "mixolydian", "locrian", "minor pentatonic", "major pentatonic" }
+                "phrygian dominant", "lydian", "mixolydian", "locrian", "minor pentatonic", "major pentatonic",
+                "harmonic major" }
 local SCALE_STEPS = {
   ["minor"] = { 0, 2, 3, 5, 7, 8, 10 }, ["major"] = { 0, 2, 4, 5, 7, 9, 11 },
   ["harmonic minor"] = { 0, 2, 3, 5, 7, 8, 11 }, ["melodic minor"] = { 0, 2, 3, 5, 7, 9, 11 },
@@ -262,6 +263,7 @@ local SCALE_STEPS = {
   ["phrygian dominant"] = { 0, 1, 4, 5, 7, 8, 10 }, ["lydian"] = { 0, 2, 4, 6, 7, 9, 11 },
   ["mixolydian"] = { 0, 2, 4, 5, 7, 9, 10 }, ["locrian"] = { 0, 1, 3, 5, 6, 8, 10 },
   ["minor pentatonic"] = { 0, 3, 5, 7, 10 }, ["major pentatonic"] = { 0, 2, 4, 7, 9 },
+  ["harmonic major"] = { 0, 2, 4, 5, 7, 8, 11 },
 }
 
 -- A scale as MIDI_GetScale reports it: one bit per semitone above the root.
