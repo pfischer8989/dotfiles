@@ -7,30 +7,78 @@
 --
 -- The wiring is read from each template track's P_EXT:empire:
 --   folder=NAME;vca=NAME;sends=Return:dB,Return:dB;arm=1
+--
+-- The menu has a submenu per category folder (Drums, Bass, Synths, ...). A
+-- script can name a template by its name alone ("Synth - Hive") or as
+-- "Folder/Name"; either way it's found in whichever folder it's in.
 
 local R = reaper
 local DIR = R.GetResourcePath() .. "/TrackTemplates/Empire"
 
+-- Template files under DIR: { {folder=, name=, path=}, ... }, by folder then name.
+-- Files loose in DIR itself have folder "".
 local function templates()
-  local names, i = {}, 0
+  local list = {}
+  local function scan(folder)
+    local dir = folder == "" and DIR or DIR .. "/" .. folder
+    local i = 0
+    while true do
+      local f = R.EnumerateFiles(dir, i)
+      if not f then break end
+      local n = f:match("^(.*)%.RTrackTemplate$")
+      if n then list[#list + 1] = { folder = folder, name = n, path = dir .. "/" .. f } end
+      i = i + 1
+    end
+  end
+  scan("")
+  local i = 0
   while true do
-    local f = R.EnumerateFiles(DIR, i)
-    if not f then break end
-    local n = f:match("^(.*)%.RTrackTemplate$")
-    if n then names[#names + 1] = n end
+    local d = R.EnumerateSubdirectories(DIR, i)
+    if not d then break end
+    scan(d)
     i = i + 1
   end
-  table.sort(names)
-  return names
+  table.sort(list, function(a, b)
+    if a.folder ~= b.folder then return a.folder < b.folder end
+    return a.name < b.name
+  end)
+  return list
 end
 
-local function pick(names)
+-- The file for a template named "Name" or "Folder/Name".
+local function template_path(want)
+  for _, t in ipairs(templates()) do
+    if t.name == want or (t.folder ~= "" and t.folder .. "/" .. t.name == want) then
+      return t.path
+    end
+  end
+end
+
+-- A menu with a submenu per folder; returns the chosen template's path.
+local function pick(list)
+  local items, order, folder = {}, {}, nil
+  for k, t in ipairs(list) do
+    if t.folder ~= folder then
+      if folder and folder ~= "" then items[#items] = "<" .. items[#items] end
+      folder = t.folder
+      if folder ~= "" then
+        items[#items + 1] = ">" .. folder
+        order[#order + 1] = false        -- a submenu header isn't an item
+      end
+    end
+    items[#items + 1] = t.name:gsub("|", "/")
+    order[#order + 1] = t
+    if k == #list and folder ~= "" then items[#items] = "<" .. items[#items] end
+  end
+  -- Submenu headers aren't counted by showmenu's return value: drop them.
+  local pickable = {}
+  for _, t in ipairs(order) do if t then pickable[#pickable + 1] = t end end
   local x, y = R.GetMousePosition()
   gfx.init("Empire", 0, 0, 0, x, y)
   gfx.x, gfx.y = gfx.screentoclient(x, y)
-  local c = gfx.showmenu(table.concat(names, "|"))
+  local c = gfx.showmenu(table.concat(items, "|"))
   gfx.quit()
-  return names[c]
+  return pickable[c] and pickable[c].path
 end
 
 local function ext(tr)
@@ -76,7 +124,7 @@ local function group_bit(n)
   end
 end
 
-local function insert(tmpl)
+local function insert(path)
   local before = {}
   for i = 0, R.CountTracks(0) - 1 do before[R.GetTrack(0, i)] = true end
 
@@ -88,7 +136,7 @@ local function insert(tmpl)
     R.SetTrackSelected(first, true)
     R.SetOnlyTrackSelected(first)
   end
-  R.Main_openProject(DIR .. "/" .. tmpl .. ".RTrackTemplate")
+  R.Main_openProject(path)
 
   local block = {}
   for i = 0, R.CountTracks(0) - 1 do
@@ -155,21 +203,28 @@ end
 
 -- A test or another script can name the template instead of the menu.
 local tmpl = R.GetExtState("Empire", "insert")
+local path
 if tmpl ~= "" then
   R.DeleteExtState("Empire", "insert", false)
+  path = template_path(tmpl)
+  if not path then
+    R.ShowConsoleMsg("Empire Insert Track: no track template called " .. tmpl .. "\n")
+    return
+  end
 else
-  local names = templates()
-  if #names == 0 then
+  local list = templates()
+  if #list == 0 then
     R.ShowMessageBox("No templates in " .. DIR .. ". Run Empire Build Templates first.", "Empire", 0)
     return
   end
-  tmpl = pick(names)
+  path = pick(list)
+  tmpl = path and path:match("([^/\\]+)%.RTrackTemplate$")
 end
-if not tmpl then return end
+if not path then return end
 
 R.Undo_BeginBlock()
 R.PreventUIRefresh(1)
-insert(tmpl)
+insert(path)
 R.PreventUIRefresh(-1)
 R.TrackList_AdjustWindows(false)
 R.Undo_EndBlock("Empire: insert " .. tmpl, -1)

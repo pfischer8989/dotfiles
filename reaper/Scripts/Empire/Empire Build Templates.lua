@@ -17,6 +17,14 @@
 --
 -- Track templates carry their wiring in P_EXT:empire, read by
 -- "Empire Insert Track": folder=, vca=, sends=Name:dB,..., arm=1.
+--
+-- Templates are saved in category folders under TrackTemplates/Empire/
+-- (Drums, Bass, Guitars, Synths, Pads, Drones, Samplers, Audio, FX Bus), which
+-- REAPER's own template menu shows as submenus. A template is still known by
+-- its name alone ("Atlas Kit", "Synth - Hive"): sketches and setups name it, and
+-- Insert Track finds it in whichever folder it is. Names must stay unique.
+-- Templates left loose in TrackTemplates/Empire/ by older builds are moved to
+-- Empire-backup/ in the resource folder.
 
 local R = reaper
 local HERE = ({ R.get_action_context() })[2]:match("^(.*)[/\\]")
@@ -61,6 +69,26 @@ local PLUG = {
   zebra3 = "VST3:Zebra3 (u-he)",
   diva = "VST3:Diva (u-he)",
   hive = "VST3:Hive (u-he)",
+  pigments = "VST3:Pigments (Arturia)",
+  bazille = "VST3:Bazille (u-he)",
+  repro1 = "VST3:Repro-1 (u-he)",
+  repro5 = "VST3:Repro-5 (u-he)",
+  je8086 = "VST3:JE8086 (The Usual Suspects)",
+  zebralette3 = "VST3:Zebralette3 (u-he)",
+  zebrahz = "VST3:ZebraHZ (u-he)",
+  synthmaster2 = { "VST3:SynthMaster 2 (KV331 Audio)", "VST3:SynthMaster2", "AUi:KV331 Audio: SynthMaster 2" },
+  kontakt8 = "VST3:Kontakt 8 (Native Instruments)",
+  engl = "VST3:ENGL Savage 120 (Plugin Alliance)",
+  fuchs = "VST3:Fuchs Overdrive Supreme 50 (Plugin Alliance)",
+  ampcraft = "VST3:AmpCraft - 1992 (Kazrog)",
+  ampbox = "VST3:Ampbox (Mercuriall)",
+  tone3000 = "VST3:TONE3000 (TONE3000)",
+  supermassive = "VST3:ValhallaSupermassive (Valhalla DSP, LLC)",
+  plate = "VST3:Little Plate (Soundtoys)",
+  echoboy = "VST3:EchoBoy (Soundtoys)",
+  decapitator = "VST3:Decapitator (Soundtoys)",
+  crystallizer = "VST3:Crystallizer (Soundtoys)",
+  microshift = "VST3:MicroShift (Soundtoys)",
   nam = "VST3:NeuralAmpModeler (Steven Atkinson)",
   eq = "VST3:TB Equalizer Pro (ToneBoosters)",
   punish = "VST3:Punish (Heavyocity)",
@@ -70,11 +98,16 @@ local PLUG = {
   landr = "VST3:LANDR Mastering Pro (LANDR)",
 }
 
+-- A plugin by key; a key can list several names to try (VST3, then AU).
 local function addfx(tr, key)
-  local name = PLUG[key] or key
-  local i = R.TrackFX_AddByName(tr, name, false, -1)
-  if i < 0 then say("  ! could not load " .. name) end
-  return i
+  local names = PLUG[key] or key
+  if type(names) == "string" then names = { names } end
+  for _, name in ipairs(names) do
+    local i = R.TrackFX_AddByName(tr, name, false, -1)
+    if i >= 0 then return i end
+  end
+  say("  ! could not load " .. table.concat(names, " or "))
+  return -1
 end
 
 -- Your saved chain FXChains/Empire/<role>.RfxChain, else the default plugins.
@@ -164,11 +197,32 @@ local function clear()
   end
 end
 
-local function save_template(name)
+local function save_template(folder, name)
+  R.RecursiveCreateDirectory(TT .. "/" .. folder, 0)
   R.Main_OnCommand(40297, 0) -- unselect all tracks
   for i = 0, R.CountTracks(0) - 1 do R.SetTrackSelected(R.GetTrack(0, i), true) end
-  R.Main_SaveProjectEx(0, TT .. "/" .. name .. ".RTrackTemplate", 1)
-  say("track template: " .. name)
+  R.Main_SaveProjectEx(0, TT .. "/" .. folder .. "/" .. name .. ".RTrackTemplate", 1)
+  say("track template: " .. folder .. "/" .. name)
+end
+
+-- Older builds saved every template loose in TrackTemplates/Empire/: move them
+-- out of REAPER's menu (to Empire-backup/), so each shows once, in its folder.
+local function move_loose_templates()
+  local backup = RES .. "/Empire-backup/TrackTemplates-" .. os.date("%Y%m%d-%H%M%S")
+  local moved, i = {}, 0
+  while true do
+    local f = R.EnumerateFiles(TT, i)
+    if not f then break end
+    if f:match("%.RTrackTemplate$") then moved[#moved + 1] = f end
+    i = i + 1
+  end
+  if #moved == 0 then return end
+  R.RecursiveCreateDirectory(backup, 0)
+  for _, f in ipairs(moved) do
+    local ok, err = os.rename(TT .. "/" .. f, backup .. "/" .. f)
+    if not ok then say("  ! could not move " .. f .. ": " .. tostring(err)) end
+  end
+  say("moved " .. #moved .. " loose templates to " .. backup)
 end
 
 -- ---------------------------------------------------------------- templates
@@ -207,6 +261,21 @@ local function guitar(name, amp, folder, sends, o)
   end
 end
 
+-- A return for the FX folder: 100% wet unless it's your saved chain.
+local function fxbus(name, plugs)
+  return function()
+    local t = track(name, { color = COLOR.FX, ext = "folder=FX" })
+    if not chain(t, name, plugs) then full_wet(t) end
+  end
+end
+
+-- A reference mix: plays straight to the outputs, past the master chain.
+local function reference()
+  local t = track("Reference", { color = rgb(120, 120, 120) })
+  R.SetMediaTrackInfo_Value(t, "B_MAINSEND", 0)
+  R.CreateTrackSend(t, nil) -- hardware output 1/2
+end
+
 local function kit(name, plug, outs)
   return function()
     -- Folder "kit" bus; children receive the instrument's pairs from 3/4 up, and 1/2 is
@@ -228,23 +297,26 @@ local function kit(name, plug, outs)
   end
 end
 
+local LEAD = "Verb Long:-20,Delay:-24"
+local PAD = "Verb Long:-14,Shimmer:-20,Delay:-20"
+local DRONE = "Verb Long:-12,Shimmer:-18,Delay:-18"
+local GTR = "Verb Short:-18,Delay:-22"
+
+-- { folder, template name, builder }. The names are what sketches and setups use.
 local TEMPLATES = {
-  { "Atlas Kit", kit("Atlas Kit", "atlas", core.DRUM_KITS["Atlas Kit"].outputs.order) },
-  { "Superior Drummer Kit", kit("Superior Drummer Kit", "sd3", { "Kick", "Snare", "Toms", "Hats", "OH", "Room", "Ride" }) },
-  { "Synth - Zebra 3", synth("Zebra 3", "zebra3", "SYNTHS", "Verb Long:-20,Delay:-24") },
-  { "Synth - Diva", synth("Diva", "diva", "SYNTHS", "Verb Long:-20,Delay:-24") },
-  { "Synth - Hive", synth("Hive", "hive", "SYNTHS", "Verb Long:-20,Delay:-24") },
-  { "Pad - Diva", synth("Pad", "diva", "SYNTHS", "Verb Long:-14,Shimmer:-20,Delay:-20") },
-  { "Bass - Zebra 3", synth("Bass", "zebra3", "BASS", "") },
-  { "Bass - Diva", synth("Bass", "diva", "BASS", "") },
-  { "Bass - Hive", synth("Bass", "hive", "BASS", "") },
-  { "Bass Guitar - NAM", guitar("Bass Guitar", "nam", "BASS", "") },
-  { "Percussion - Audio", audio("Percussion", "PERCUSSION") },
-  { "Samples - Audio", audio("Samples", "SAMPLES") },
-  { "SFX - Audio", audio("SFX", "SFX") },
-  { "Drone - Zebra 3", synth("Drone", "zebra3", "DRONES", "Verb Long:-12,Shimmer:-18,Delay:-18") },
-  { "Guitar - NAM", guitar("Guitar", "nam", "GUITARS", "Verb Short:-18,Delay:-22") },
-  { "Guitar Double - NAM", function()
+  { "Drums", "Atlas Kit", kit("Atlas Kit", "atlas", core.DRUM_KITS["Atlas Kit"].outputs.order) },
+  { "Drums", "Superior Drummer Kit", kit("Superior Drummer Kit", "sd3", { "Kick", "Snare", "Toms", "Hats", "OH", "Room", "Ride" }) },
+  { "Drums", "Percussion - Audio", audio("Percussion", "PERCUSSION") },
+
+  { "Bass", "Bass - Zebra 3", synth("Bass", "zebra3", "BASS", "") },
+  { "Bass", "Bass - Diva", synth("Bass", "diva", "BASS", "") },
+  { "Bass", "Bass - Hive", synth("Bass", "hive", "BASS", "") },
+  { "Bass", "Bass - Pigments", synth("Bass", "pigments", "BASS", "") },
+  { "Bass", "Bass - Repro-1", synth("Bass", "repro1", "BASS", "") },
+  { "Bass", "Bass Guitar - NAM", guitar("Bass Guitar", "nam", "BASS", "") },
+
+  { "Guitars", "Guitar - NAM", guitar("Guitar", "nam", "GUITARS", GTR) },
+  { "Guitars", "Guitar Double - NAM", function()
       -- Two performances: record L first (armed), then arm R for the second take.
       guitar("Gtr L", "nam", "GUITARS", "Verb Short:-20", { pan = -0.8 })()
       guitar("Gtr R", "nam", "GUITARS", "Verb Short:-20", { pan = 0.8 })()
@@ -252,7 +324,54 @@ local TEMPLATES = {
       R.GetSetMediaTrackInfo_String(r, "P_EXT:empire", "sends=Verb Short:-20", true)
       R.SetMediaTrackInfo_Value(r, "I_RECMON", 0)
     end },
-  { "Ambient Guitar - NAM", guitar("Ambient Gtr", "nam", "DRONES", "Shimmer:-10,Verb Long:-12,Delay:-14") },
+  { "Guitars", "Guitar - ENGL Savage 120", guitar("Guitar", "engl", "GUITARS", GTR) },
+  { "Guitars", "Guitar - Fuchs ODS 50", guitar("Guitar", "fuchs", "GUITARS", GTR) },
+  { "Guitars", "Guitar - AmpCraft 1992", guitar("Guitar", "ampcraft", "GUITARS", GTR) },
+  { "Guitars", "Guitar - Ampbox", guitar("Guitar", "ampbox", "GUITARS", GTR) },
+  { "Guitars", "Guitar - TONE3000", guitar("Guitar", "tone3000", "GUITARS", GTR) },
+
+  { "Synths", "Synth - Zebra 3", synth("Zebra 3", "zebra3", "SYNTHS", LEAD) },
+  { "Synths", "Synth - Diva", synth("Diva", "diva", "SYNTHS", LEAD) },
+  { "Synths", "Synth - Hive", synth("Hive", "hive", "SYNTHS", LEAD) },
+  { "Synths", "Synth - Pigments", synth("Pigments", "pigments", "SYNTHS", LEAD) },
+  { "Synths", "Synth - Bazille", synth("Bazille", "bazille", "SYNTHS", LEAD) },
+  { "Synths", "Synth - Repro-1", synth("Repro-1", "repro1", "SYNTHS", LEAD) },
+  { "Synths", "Synth - Repro-5", synth("Repro-5", "repro5", "SYNTHS", LEAD) },
+  { "Synths", "Synth - JE8086", synth("JE8086", "je8086", "SYNTHS", LEAD) },
+  { "Synths", "Synth - Zebralette 3", synth("Zebralette 3", "zebralette3", "SYNTHS", LEAD) },
+  { "Synths", "Synth - Zebra HZ", synth("Zebra HZ", "zebrahz", "SYNTHS", LEAD) },
+  { "Synths", "Synth - SynthMaster 2", synth("SynthMaster 2", "synthmaster2", "SYNTHS", LEAD) },
+
+  { "Pads", "Pad - Diva", synth("Pad", "diva", "SYNTHS", PAD) },
+  { "Pads", "Pad - Zebra 3", synth("Pad", "zebra3", "SYNTHS", PAD) },
+  { "Pads", "Pad - Pigments", synth("Pad", "pigments", "SYNTHS", PAD) },
+  { "Pads", "Pad - Hive", synth("Pad", "hive", "SYNTHS", PAD) },
+
+  { "Drones", "Drone - Zebra 3", synth("Drone", "zebra3", "DRONES", DRONE) },
+  { "Drones", "Drone - Zebra HZ", synth("Drone", "zebrahz", "DRONES", DRONE) },
+  { "Drones", "Drone - Pigments", synth("Drone", "pigments", "DRONES", DRONE) },
+  { "Drones", "Ambient Guitar - NAM", guitar("Ambient Gtr", "nam", "DRONES", "Shimmer:-10,Verb Long:-12,Delay:-14") },
+
+  -- An empty sampler for any library; it lands with the synths.
+  { "Samplers", "Kontakt 8", synth("Kontakt", "kontakt8", "SYNTHS", LEAD) },
+
+  { "Audio", "Samples - Audio", audio("Samples", "SAMPLES") },
+  { "Audio", "SFX - Audio", audio("SFX", "SFX") },
+  { "Audio", "Reference", reference },
+
+  -- Returns. Empire Song already has the first five; the rest are extra
+  -- colours to insert when a song wants them (send to them by hand).
+  { "FX Bus", "Verb Short", fxbus("Verb Short", { "room" }) },
+  { "FX Bus", "Verb Long", fxbus("Verb Long", { "vintage" }) },
+  { "FX Bus", "Shimmer", fxbus("Shimmer", { "shimmer" }) },
+  { "FX Bus", "Delay", fxbus("Delay", { "mfm2" }) },
+  { "FX Bus", "Drum Crush", fxbus("Drum Crush", { "presswerk" }) },
+  { "FX Bus", "Verb Huge", fxbus("Verb Huge", { "supermassive" }) },
+  { "FX Bus", "Plate", fxbus("Plate", { "plate" }) },
+  { "FX Bus", "Echo", fxbus("Echo", { "echoboy" }) },
+  { "FX Bus", "Parallel Saturation", fxbus("Parallel Saturation", { "decapitator" }) },
+  { "FX Bus", "Crystal", fxbus("Crystal", { "crystallizer" }) },
+  { "FX Bus", "Wide", fxbus("Wide", { "microshift" }) },
 }
 
 local RETURNS = {
@@ -300,10 +419,14 @@ tab:close()
 R.Main_OnCommand(40859, 0) -- new project tab
 R.Main_openProject("noprompt:" .. scratch) -- has a file, so it can close without asking
 R.PreventUIRefresh(1)
+move_loose_templates()
+local seen = {}
 for _, t in ipairs(TEMPLATES) do
+  if seen[t[2]] then say("  ! two templates are called " .. t[2]) end
+  seen[t[2]] = true
   clear()
-  t[2]()
-  save_template(t[1])
+  t[3]()
+  save_template(t[1], t[2])
 end
 clear()
 project()

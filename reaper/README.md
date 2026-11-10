@@ -13,9 +13,16 @@ ln -sfn ~/dotfiles/reaper/Scripts/Empire ~/Library/Application\ Support/REAPER/S
   `Guitar Amp`, `Bus`, `Mix Bus`, or a return's name). It sets each Atlas pad's
   and Superior Drummer mic's output in the plugin's saved state, because neither
   has a parameter for it.
+  Track templates are saved in category folders under `TrackTemplates/Empire/`:
+  Drums, Bass, Guitars, Synths, Pads, Drones, Samplers, Audio and FX Bus (the
+  returns, plus extra ones like Verb Huge, Plate, Echo, Parallel Saturation,
+  Crystal and Wide). A template is still known by its name alone (`Atlas Kit`,
+  `Synth - Hive`), so names stay unique across folders. A rebuild moves
+  templates left loose in `TrackTemplates/Empire/` to `Empire-backup/`.
 - **Empire Insert Track**: load it into the action list and give it a
-  shortcut. Picks a template, moves it into its folder bus, joins the VCA
-  group, creates its sends and arms it.
+  shortcut. Picks a template from a menu with a submenu per folder, moves it
+  into its folder bus (an FX Bus template goes in the FX folder), joins the
+  VCA group, creates its sends and arms it.
 - **Empire Test Templates**: inserts every template into a fresh Empire Song
   and writes `Empire-test.log` in the REAPER resource folder.
 

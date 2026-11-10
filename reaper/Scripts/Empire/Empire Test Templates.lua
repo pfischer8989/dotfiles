@@ -12,13 +12,26 @@ local DIR = RES .. "/TrackTemplates/Empire"
 R.Main_OnCommand(40859, 0) -- new project tab
 R.Main_openProject("template:noprompt:" .. RES .. "/ProjectTemplates/Empire Song.RPP")
 
-local names, i = {}, 0
+-- Every template, loose or in a category folder, as "Folder/Name".
+local names = {}
+local function scan(folder)
+  local dir = folder == "" and DIR or DIR .. "/" .. folder
+  local i = 0
+  while true do
+    local f = R.EnumerateFiles(dir, i)
+    if not f then break end
+    local n = f:match("^(.*)%.RTrackTemplate$")
+    if n then names[#names + 1] = folder == "" and n or folder .. "/" .. n end
+    i = i + 1
+  end
+end
+scan("")
+local d = 0
 while true do
-  local f = R.EnumerateFiles(DIR, i)
-  if not f then break end
-  local n = f:match("^(.*)%.RTrackTemplate$")
-  if n then names[#names + 1] = n end
-  i = i + 1
+  local sub = R.EnumerateSubdirectories(DIR, d)
+  if not sub then break end
+  scan(sub)
+  d = d + 1
 end
 table.sort(names)
 

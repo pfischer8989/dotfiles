@@ -31,7 +31,6 @@ local HTTP = HERE .. "/empire_panel/http.sh"
 local RUNS = HOME .. "/.empire/reaper/runs"
 local RESOURCES = R.GetResourcePath()
 local SONG_TEMPLATE = RESOURCES .. "/ProjectTemplates/Empire Song.RPP"
-local TRACK_TEMPLATES = RESOURCES .. "/TrackTemplates/Empire"
 local KEY_ITEMS = table.concat(core.KEYS, "\0") .. "\0"
 local SCALE_ITEMS = table.concat(core.SCALES, "\0") .. "\0"
 local POLL_SECONDS = 10
@@ -341,7 +340,7 @@ local function set_up_project(item, doc)
     return
   end
   for _, name in ipairs(doc.tracks) do
-    if not R.file_exists(TRACK_TEMPLATES .. "/" .. name .. ".RTrackTemplate") then
+    if not project.template_file(name) then
       message = "Can't set up: no track template called " .. name
       return
     end

@@ -122,6 +122,23 @@ function project.set_tempo(doc)
   R.UpdateTimeline()
 end
 
+-- The file of the Empire track template called `name` ("Synth - Hive", or
+-- "Folder/Name"), in TrackTemplates/Empire/ or one of its category folders.
+function project.template_file(name)
+  local dir = R.GetResourcePath() .. "/TrackTemplates/Empire"
+  local file = name:match("([^/]+)$") .. ".RTrackTemplate"
+  if R.file_exists(dir .. "/" .. name .. ".RTrackTemplate") then
+    return dir .. "/" .. name .. ".RTrackTemplate"
+  end
+  local i = 0
+  while true do
+    local sub = R.EnumerateSubdirectories(dir, i)
+    if not sub then return nil end
+    if R.file_exists(dir .. "/" .. sub .. "/" .. file) then return dir .. "/" .. sub .. "/" .. file end
+    i = i + 1
+  end
+end
+
 -- Inserts a track template through Empire Insert Track and returns the track
 -- holding the instrument, which in a kit is a child of the folder.
 function project.insert_template(here, name)

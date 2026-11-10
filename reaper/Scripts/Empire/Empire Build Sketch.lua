@@ -68,7 +68,7 @@ local function build(path, doc)
   local template = R.GetResourcePath() .. "/ProjectTemplates/Empire Song.RPP"
   if not R.file_exists(template) then return fail("run Empire Build Templates first") end
   for _, part in ipairs(doc.parts) do
-    if part.template and not R.file_exists(R.GetResourcePath() .. "/TrackTemplates/Empire/" .. part.template .. ".RTrackTemplate") then
+    if part.template and not project.template_file(part.template) then
       return fail("no track template called " .. part.template)
     end
   end
