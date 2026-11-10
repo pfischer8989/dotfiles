@@ -61,6 +61,7 @@ CLOSE_TONE_DB = 2.5                          # tone closer than this to the base
 REPEAT_CORR = 0.9                            # a held chord that repeats this exactly...
 REPEAT_MAX_S = 12.0                          # ...at a period this short loops audibly
 LOW_WIDTH_MAX = 0.25                         # side share below 120 Hz: phasey under bass
+LOW_SHARE_MIN = 0.05                         # below this there's no low end to judge
 LOW_SHARE_MAX = 0.45                         # energy share below 120 Hz for a C3-C4 chord
 LEVEL_SPREAD_DB = 3.0                        # from the median of the presets measured
 FAST_ATTACK_S = 0.01
@@ -300,7 +301,7 @@ def flags(m: dict, base: Optional[dict] = None, tail_s: float = 0.0) -> List[str
     corr, every = m["repeat"]["corr"], m["repeat"]["every_s"]
     if m["moving"] and every and corr >= REPEAT_CORR:
         out.append(f"loops: the held chord repeats every {every:g} s (corr {corr:.2f})")
-    if m["low_width"] > LOW_WIDTH_MAX:
+    if m["low_width"] > LOW_WIDTH_MAX and m["low_share"] >= LOW_SHARE_MIN:
         out.append(f"wide low end: {m['low_width']:.2f} of the energy below {LOW_HZ} Hz is side "
                    "(not mono-compatible)")
     if m["low_share"] > LOW_SHARE_MAX:

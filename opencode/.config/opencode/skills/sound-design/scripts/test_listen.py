@@ -103,6 +103,14 @@ class Tone(unittest.TestCase):
         self.assertIn("wide low end", text)
         self.assertIn("heavy low end", text)
 
+    def test_no_low_end_means_no_low_end_flag(self):
+        x = t()
+        top = gate(chord(x, freqs=(523.3, 622.3, 784.0)), x)
+        rumble = gate(0.003 * np.sin(2 * np.pi * 60 * x), x)
+        m = listen.measure(np.stack([top + rumble, top - rumble]), HOLD, OFF)
+        self.assertGreater(m["low_width"], listen.LOW_WIDTH_MAX)
+        self.assertNotIn("low end", " ".join(listen.flags(m)))
+
     def test_same_sound_is_close_and_different_sound_is_not(self):
         x = t()
         a = listen.measure(stereo(gate(chord(x), x)), HOLD, OFF)
