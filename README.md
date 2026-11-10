@@ -9,7 +9,9 @@ dotfiles/
 ├── nvim/.config/nvim/
 ├── herdr-macos/.config/herdr/
 ├── herdr-linux/.config/herdr/
-├── opencode/.config/opencode/    # AGENTS.md, skills/, agents/ (personalities)
+├── opencode/.config/opencode/    # AGENTS.md, skills/ (every agent skill), agents/ (personalities)
+├── claude/.claude/skills/        # links to the skills above, for Claude Code
+├── grok/.grok/skills/            # links to the skills above, for Grok
 ├── tmux/.tmux.conf
 └── ghostty/.config/ghostty/config
 ```
@@ -33,6 +35,7 @@ stow herdr-macos
 stow herdr-linux
 
 stow opencode
+stow --no-folding claude grok   # skills for Claude Code and Grok (see below)
 stow tmux
 stow ghostty
 ```
@@ -42,6 +45,29 @@ skills (`skills/`), and the Empire agent personalities (`agents/` — linus,
 rubin, jocko, elon, watts). Hermes (the Empire controller) is Python code in its
 own repo (`~/Dropbox/Development/Personal/empire`), not a dotfiles package; its
 config and state live in `~/.empire/`.
+
+### Skills
+
+Every agent skill lives once, in `opencode/.config/opencode/skills/<name>/`.
+The `claude` and `grok` packages hold only relative links to those folders,
+so `stow --no-folding claude grok` makes every skill visible to Claude Code
+(`~/.claude/skills/`) and Grok (`~/.grok/skills/`) as well as OpenCode.
+`--no-folding` matters: without it, on a host with no `~/.grok` or
+`~/.claude` yet, stow would link the whole folder into this repo and the
+tool's logins and history would be written here.
+
+To add a skill: create `opencode/.config/opencode/skills/<name>/SKILL.md`, then
+
+```bash
+for t in claude/.claude grok/.grok; do
+  ln -s ../../../opencode/.config/opencode/skills/<name> $t/skills/<name>
+done
+stow --no-folding -R claude grok   # on each host after pulling
+```
+
+A skill linked into `~/.claude/skills` by hand (the old way) makes stow stop
+with "existing target is not owned by stow": move that link aside and stow
+again.
 
 This creates symlinks from the expected config locations to the files in this repo.
 
