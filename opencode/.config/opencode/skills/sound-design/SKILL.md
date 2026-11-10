@@ -1,6 +1,6 @@
 ---
 name: sound-design
-description: Use when designing synth sounds or a preset pack for Paul's u-he synths (Diva, Zebra 3) on Romulus, or rendering audio demos of a pack. Starts from the closest factory presets, writes new presets as intentional variations with uhe.py, and saves them where the synth's preset browser shows them (User > cListen4 > <pack>); render.py plays presets headless and writes levelled MP3 demos.
+description: Use when designing synth sounds or a preset pack for Paul's u-he synths (Diva, Zebra 3) on Romulus, or rendering audio demos of a pack. Starts from the closest factory presets, writes new presets as intentional variations with uhe.py, measures them with listen.py (it plays each one headless and reports what moves, tone, width, attack and release, and what's too close to its base) before saving them where the synth's preset browser shows them (User > cListen4 > <pack>); render.py writes levelled MP3 demos.
 ---
 
 # Sound design for u-he synths
@@ -11,6 +11,9 @@ module and name, then a binary block (routing, wavetables, curves).
 and writes new ones: it changes text values, keeps the base preset's binary
 block, refuses parameters that point into it, validates every value against
 the factory presets' ranges, and writes a whole pack or nothing.
+
+`scripts/listen.py` plays presets in the real plugin (no DAW) and measures
+them, so you design with numbers instead of guesses (see "Listen and revise").
 
 Synth guides (read the one for your synth before designing):
 `references/diva.md`, `references/zebra3.md` (catalog name `Zebra3`).
@@ -41,11 +44,17 @@ change it: the guide explains what each parameter does musically.
    one should be, e.g. "dark evolving pad, slow attack, wide". Vary the pack:
    different starting points, characters and registers, not 8 copies of one
    idea.
-2. **Ground yourself in the library.** For each category you'll use, run
-   `typical`. Then `find` 2-3 candidate starting presets per sound and `show`
-   or `diff` them. Prefer factory presets (`--source factory`) whose
-   oscillator and filter models already suit the sound (see the models table
-   in the synth guide).
+2. **Ground yourself in the library.** First look for Paul's own starting
+   patches: `uhe.py find <Synth> --source template` (they live in
+   `<Synth>/cListen4/Templates/`). Their Description says what's on the grid
+   and which oscillator, wavetable and MSEG does what; when one suits the
+   sound, start from it rather than a factory preset, because its routing
+   and waveforms are his, not u-he's. Otherwise, for each category you'll
+   use, run `typical`, then `find` 2-3 candidate starting presets per sound
+   and `show` or `diff` them. Prefer factory presets (`--source factory`)
+   whose oscillator and filter models already suit the sound (see the models
+   table in the synth guide). `typical` shows what's normal; a distinctive
+   preset often sits away from it on purpose.
 3. **Design each preset as a variation** of its starting preset that a
    listener would call a different sound, not a tweak: 8-20 deliberate
    changes, each with a reason ("ENV1.Atk 1 -> 45: slow swell"), spread over
@@ -82,17 +91,64 @@ change it: the guide explains what each parameter does musically.
    them on a typo). `set` keys are `MODULE.Param` exactly as `show` prints
    them. Name presets with a short shared prefix for the pack. Modulation
    sources can be given by name (`"MM3.Source": "LFO 2"`).
-5. **Validate, then write**: `uhe.py pack spec.json --dry-run`; fix every
-   error it reports (nothing is written while any preset is invalid); then
-   run it without `--dry-run`. Presets land in
+5. **Validate**: `uhe.py pack spec.json --dry-run`; fix every error it
+   reports (nothing is written while any preset is invalid).
+6. **Listen and revise** (below) until each preset's flags are fixed or
+   explained, at most three rounds.
+7. **Write**: run `uhe.py pack` without `--dry-run`. Presets land in
    `~/Library/Audio/Presets/u-he/<Synth>/cListen4/<pack>/`, with Bank
    `cListen4 <pack>` and Author `cListen4` (a spec's `author` replaces
    cListen4 in all three).
-6. **Report** (your report.md): where to find the pack in the synth's
+8. **Report** (your report.md): where to find the pack in the synth's
    browser (User > cListen4 > <pack>; reopen the plugin window if it doesn't
    show yet), then a table with each preset's name, what it should sound
-   like, its starting preset and the key changes and why. End with what to
-   listen for when auditioning. Attach `spec.json`.
+   like, its starting preset and the key changes and why. Then the final
+   `listen.md` table and any flag you left, with the reason. End with what to
+   listen for when auditioning. Attach `spec.json` and `listen.md`.
+
+## Listen and revise
+
+```bash
+~/.venvs/audio/bin/python <skill>/scripts/listen.py spec.json --out <work>/listen-1
+~/.venvs/audio/bin/python <skill>/scripts/listen.py spec.json --out <work>/listen-2 --macros
+~/.venvs/audio/bin/python <skill>/scripts/listen.py "<pack folder>" --out <dir>   # written presets
+```
+
+It builds each preset of the spec in memory (nothing is written), plays it
+and its base preset in the plugin with the same test (a minor 9th around
+C3-C4 held 30 s, one chord change, 8 s of release), and writes `listen.md`
+(a table, then flags) and `listen.json`. Loading the plugin takes about a
+minute, then each preset a few seconds, so listen to a whole batch at once.
+For sounds the chord test doesn't suit (basses, leads, hits), give the spec
+a `"listen"` block (or one per preset) in render.py's clip format: `{"bpm":
+120, "bars": 4, "tail": 3, "notes": [[0, "A1", 2, 100], ...]}`; the first
+note or chord is the "held" part movement is measured over.
+
+What it measures, and what to do with each flag:
+
+- **moves**: what changes while the chord is held (brightness in octaves,
+  level and pan in dB, width, spectral shape), how much, and its repeat
+  period. `static` or `one movement only`: add an independent modulation
+  on another target, at a rate that doesn't divide into the first.
+  `loops: repeats every N s`: one LFO dominates; slow it, add a second at
+  an unrelated rate, or use a free-running or random source.
+- **vs base dB**: how far the tone moved from the base preset (spectral
+  shape, level removed). `close to its base`: the preset is a tweak; change
+  the source (wavetable position, oscillator mix, unison, pitch layers) and
+  the filter, not just effects and envelopes.
+- **pack: X and Y sound alike**: change one of them more.
+- **wide low end** / **heavy low end**: narrow or cut what's under 120 Hz.
+- **instant attack**, **release longer than the tail**, **hot**: as named.
+- **level**: presets more than 3 dB from the batch's median; adjust
+  `MainMix.VolMain` (Zebra 3) or `VCA1.Vol` (Diva) toward the others.
+- `--macros` adds a table of what each of Ctrl A-D and the mod wheel does at
+  full: `barely changes the sound` means the control is mapped to nothing
+  audible; fix the mapping or its depth.
+
+The thresholds are rules of thumb: a flag means "check this". If a flag is
+intended (a deliberately static texture, a drone with an endless release),
+keep it and say why in the report. Numbers describe the audio, not taste:
+report them, but leave "sounds great" to Paul.
 
 ## Rules
 
@@ -108,12 +164,14 @@ change it: the guide explains what each parameter does musically.
   the design rather than forcing it.
 - On a modular synth (Zebra 3) only change modules the base preset actually
   uses (the guide says how to tell); an edit to an unused module is silent.
-- You can't hear the result. Say so where it matters ("the resonance may be
-  sharp at high notes; check C5 and up") instead of overclaiming. Never
-  state measurements you can't make: no dB levels, milliseconds or Hz
-  derived from parameter values ("VCA1.Vol 42-46, close to each other" is
-  fine; "matched within 2 dB" is not). Only describe a change you actually
-  made (don't call a preset "detuned" unless it is, or say it was already).
+- You can measure but not hear. Use `listen.py`'s numbers for levels,
+  movement, attack and release ("level -21.4 dB, 1.2 dB above the batch
+  median" is fine); never derive dB, milliseconds or Hz from parameter
+  values. What a measurement can't tell you (harshness, whether it's
+  beautiful, resonance at notes the test doesn't play), say is for the
+  audition ("check C5 and up for a sharp resonance"). Only describe a change
+  you actually made (don't call a preset "detuned" unless it is, or say it
+  was already).
 
 ## Demos
 

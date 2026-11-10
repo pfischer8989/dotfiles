@@ -34,6 +34,8 @@ things up with `uhe.py manual Zebra3 <topic>`), or were tested by ear (marked
   `Tune.MTunN/MTunT`. You can't change a wavetable, curve, MSEG shape or modal
   profile; choose a base preset that already has the one you want, then move
   *positions* through it (`Osc1.Pos`, `MSEG1.CMorph`, `Modal1.Blend`).
+  Paul's templates (below) are the way to get waveforms and routing that
+  aren't u-he's.
 
 ## Templates (clean starting points in `Templates/`)
 
@@ -45,6 +47,22 @@ things up with `uhe.py manual Zebra3 <topic>`), or were tested by ear (marked
 | `04 Windowed Sync` | Osc FX Sync + Window (manual p.129) |
 | `05 Simply Modal` | modal resonator, "String" profile in A and "Tube" in B; `Modal1.Blend` gives other plucked strings. Start here for struck or resonant bodies |
 | `06 Adder` | additive renderer (manual p.128) |
+
+## Paul's templates (`cListen4/Templates/`): start here
+
+Paul builds his own starting patches in Zebra 3 and saves them to
+`~/Library/Audio/Presets/u-he/Zebra3/cListen4/Templates/` (browser: User >
+cListen4 > Templates). They're the way past the binary block: their grid,
+wavetables and MSEG shapes are his, so presets built on them don't inherit
+a factory sound. `uhe.py find Zebra3 --source template` lists them, and a
+name that exists in both places resolves to the template.
+
+Each template's **Description** is the map of its grid, since the routing is
+invisible to uhe.py: which modules are on it and in what order, what each
+oscillator's wavetable is, what each MSEG and LFO is for, and what the macros
+already do. Trust it over guesses, and confirm with the matrix slots
+(`show <template> --module MM1` ...). A module the Description doesn't name
+is probably not on the grid.
 
 ## Modules (manual pages in brackets)
 
