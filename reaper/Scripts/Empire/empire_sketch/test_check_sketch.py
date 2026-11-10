@@ -112,6 +112,16 @@ check("harmonic major is a scale", any("unknown scale" in x for x in probs), Fal
 check("harmonic major's flat 6 is in key", any("Drop/Bass/A" in x for x in probs), False)
 check("its natural 6 isn't", any("Drop/Bass/B" in x and "outside the key" in x for x in probs), True)
 
+# Double harmonic major: D natural (the flat 2) is in C# double harmonic major, D# isn't.
+d = doc()
+d["setup"]["scale"] = "double harmonic major"
+d["clips"][2]["notes"] = [[0, 50, 0, 240, 100]]     # D3
+d["clips"][3]["notes"] = [[0, 51, 0, 240, 100]]     # D#3
+probs = cs.problems(d)
+check("double harmonic major is a scale", any("unknown scale" in x for x in probs), False)
+check("its flat 2 is in key", any("Drop/Bass/A" in x for x in probs), False)
+check("its natural 2 isn't", any("Drop/Bass/B" in x and "outside the key" in x for x in probs), True)
+
 if failed:
     print("\n".join("FAIL " + f for f in failed))
     sys.exit(1)
