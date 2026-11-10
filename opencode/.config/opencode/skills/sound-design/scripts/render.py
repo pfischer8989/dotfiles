@@ -170,11 +170,15 @@ def juce_b64_encode(data: bytes) -> str:
 
 def patch_text(preset: Path) -> bytes:
     """The preset as the plugin's state holds it."""
-    data = preset.read_bytes()
+    return patch_bytes(preset.name, preset.read_bytes())
+
+
+def patch_bytes(name: str, data: bytes) -> bytes:
+    """A preset's file contents as the plugin's state holds them."""
     start = data.find(b"#AM=")
     if start < 0:
-        raise SpecError(f"{preset} is not a u-he preset (no #AM= line)")
-    return b"#pgm=" + preset.name.encode("utf-8") + b"\n" + data[start:]
+        raise SpecError(f"{name} is not a u-he preset (no #AM= line)")
+    return b"#pgm=" + name.encode("utf-8") + b"\n" + data[start:]
 
 
 def plugin_state(template: bytes, patch: bytes) -> bytes:
@@ -200,28 +204,29 @@ def plugin_path(synth: str) -> Path:
 
 
 # -- rendering --------------------------------------------------------------
-def render(spec: dict, out: Path, wav: bool = False, log=print) -> List[dict]:
-    import numpy as np
-    from mido import Message
-    from pedalboard import load_plugin
-    from pedalboard.io import AudioFile
+class Host:
+    """One loaded plugin that plays presets (loading takes about a minute)."""
 
-    synth = spec.get("synth", "Zebra3")
-    presets = [uhe.resolve(c["preset"], synth) for c in spec["clips"]]
-    log(f"loading {synth} (about a minute)")
-    plugin = load_plugin(str(plugin_path(synth)))
-    params = plugin.parameters                  # slow to build: once
-    template = plugin.raw_state
-    out.mkdir(parents=True, exist_ok=True)
-    results = []
-    for clip, preset in zip(spec["clips"], presets):
-        plugin.raw_state = plugin_state(template, patch_text(preset))
+    def __init__(self, synth: str, log=print):
+        from pedalboard import load_plugin
+        log(f"loading {synth} (about a minute)")
+        self.plugin = load_plugin(str(plugin_path(synth)))
+        self.params = self.plugin.parameters          # slow to build: once
+        self.template = self.plugin.raw_state
+
+    def play(self, patch: bytes, clip: dict, controllers: Optional[Dict[int, int]] = None):
+        """Raw stereo audio (2, n) of ``clip`` played on ``patch``, unlevelled.
+        ``controllers`` are MIDI CCs sent at the start (1 = mod wheel)."""
+        import numpy as np
+        from mido import Message
+        plugin, params = self.plugin, self.params
+        plugin.raw_state = plugin_state(self.template, patch)
         plugin.reset()
-        music_s, total_s = clip_seconds(clip)
+        _, total_s = clip_seconds(clip)
         n_total = int(total_s * SAMPLE_RATE)
         events = midi_events(clip)
         spb = 60.0 / clip["bpm"]
-        macros = {k: v for k, v in (clip.get("macros") or {}).items()}
+        macros = dict(clip.get("macros") or {})
         chunks, e = [], 0
         for start in range(0, n_total, BLOCK):
             n = min(BLOCK, n_total - start)
@@ -229,6 +234,9 @@ def render(spec: dict, out: Path, wav: bool = False, log=print) -> List[dict]:
             for knob, points in macros.items():
                 params[MACRO_PARAM.format(knob.lower())].raw_value = macro_value(points, t0 / spb)
             msgs = []
+            if start == 0:
+                msgs += [Message("control_change", control=c, value=v, time=0.0)
+                         for c, v in (controllers or {}).items()]
             while e < len(events) and events[e][0] < t1:
                 at, on, note, vel = events[e]
                 kind = "note_on" if on else "note_off"
@@ -238,7 +246,23 @@ def render(spec: dict, out: Path, wav: bool = False, log=print) -> List[dict]:
                                  num_channels=2, buffer_size=n, reset=False))
         audio = np.concatenate(chunks, axis=1)[:, :n_total].astype(np.float64)
         if not np.all(np.isfinite(audio)):
-            raise SpecError(f"{clip['file']}: the plugin produced NaN or infinite samples")
+            raise SpecError(f"{clip.get('file', 'clip')}: the plugin produced NaN or "
+                            "infinite samples")
+        return audio
+
+
+def render(spec: dict, out: Path, wav: bool = False, log=print) -> List[dict]:
+    import numpy as np
+    from pedalboard.io import AudioFile
+
+    synth = spec.get("synth", "Zebra3")
+    presets = [uhe.resolve(c["preset"], synth) for c in spec["clips"]]
+    host = Host(synth, log)
+    out.mkdir(parents=True, exist_ok=True)
+    results = []
+    for clip, preset in zip(spec["clips"], presets):
+        _, total_s = clip_seconds(clip)
+        audio = host.play(patch_text(preset), clip)
         peak = float(np.max(np.abs(audio)))
         if peak < 1e-4:
             results.append({"file": clip["file"], "preset": preset.stem, "error": "silent"})

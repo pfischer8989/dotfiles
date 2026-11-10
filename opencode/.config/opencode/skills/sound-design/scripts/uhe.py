@@ -36,6 +36,7 @@ CATALOGS = Path(os.environ.get("UHE_CATALOG_DIR", Path.home() / ".empire/uhe"))
 MANUALS = Path(os.environ.get("UHE_MANUALS", Path.home() / ".empire/manuals"))
 AUTHOR = "cListen4"             # default author: packs go under <user>/<Synth>/cListen4/<pack>/
 OUR_FOLDER = "Empire"           # legacy folder of earlier runs (still recognised, never written)
+TEMPLATES = "Templates"         # Paul's own starting patches: <user>/<Synth>/cListen4/Templates/
 BINARY_MARK = "// Section for ugly compressed binary Data"
 META_RE = re.compile(r"/\*@Meta\n(.*?)\*/\n*", re.S)
 FIELD_RE = re.compile(r"^(\w[\w ]*):\n'(.*?)'\n", re.S | re.M)
@@ -193,9 +194,14 @@ def build_catalog(synth: str) -> dict:
         root = FACTORY / synth if source == "factory" else USER / synth
         rel = path.relative_to(root).as_posix()
         ours = rel.startswith((OUR_FOLDER + "/", AUTHOR + "/"))
+        kind = source
+        if source == "user" and rel.startswith(f"{AUTHOR}/{TEMPLATES}/"):
+            kind = "template"
+        elif ours:
+            kind = "empire"
         cats = [c for c in p.meta.get("Categories", "").split(", ") if c]
         presets.append({
-            "name": path.stem, "path": str(path), "source": "empire" if ours else source,
+            "name": path.stem, "path": str(path), "source": kind,
             "folder": os.path.dirname(rel), "bank": p.meta.get("Bank", ""),
             "author": p.meta.get("Author", ""), "categories": cats,
             "features": p.meta.get("Features", ""), "character": p.meta.get("Character", ""),
@@ -249,10 +255,29 @@ def centre(vals: List[str]):
     return round(statistics.median(nums), 2)
 
 
+def newest_user_preset(synth: str) -> float:
+    """When a user preset (a new template, a new pack) last changed."""
+    root = USER / synth
+    newest = 0.0
+    if root.is_dir():
+        for path in root.rglob("*.h2p"):
+            try:
+                newest = max(newest, path.stat().st_mtime)
+            except OSError:
+                continue
+        newest = max(newest, root.stat().st_mtime)
+    return newest
+
+
 def catalog_for(synth: str) -> dict:
+    """The synth's catalog, rebuilt when it's missing or a user preset (a new
+    template or pack) is newer than it."""
     path = CATALOGS / f"{synth}.json"
     if not path.is_file():
         print(f"(building the {synth} catalog, once)", file=sys.stderr)
+        return build_catalog(synth)
+    if newest_user_preset(synth) > path.stat().st_mtime:
+        print(f"(user presets changed: rebuilding the {synth} catalog)", file=sys.stderr)
         return build_catalog(synth)
     return json.loads(path.read_text(encoding="utf-8"))
 
@@ -271,7 +296,7 @@ def resolve(ref: str, synth: str = "") -> Path:
             if e["name"].lower() == want or f"{e['folder']}/{e['name']}".lower() == want]
     if not hits:
         raise UheError(f"no {synth} preset named {ref!r} (try: uhe.py find {synth} <words>)")
-    hits.sort(key=lambda e: e["source"] != "factory")
+    hits.sort(key=lambda e: {"template": 0, "factory": 1}.get(e["source"], 2))
     return Path(hits[0]["path"])
 
 
@@ -441,6 +466,19 @@ def safe_name(name: str) -> str:
 
 def write_pack(spec: dict, dry_run=False, overwrite=False, out_dir: Optional[Path] = None):
     """Validate every preset in the spec, then write them all (or none)."""
+    plans = plan_pack(spec, overwrite=overwrite, out_dir=out_dir)
+    if not dry_run:
+        for path, preset, _ in plans:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(preset.text(), encoding="latin-1")
+    return [(path, changes) for path, _, changes in plans]
+
+
+def plan_pack(spec: dict, overwrite=False, out_dir: Optional[Path] = None,
+              check_exists: bool = True) -> List[tuple]:
+    """Every preset in the spec built in memory: (path, Preset, changes), with
+    each change listed; raises UheError listing every invalid preset. The
+    base preset of each is ``Preset.base_path``."""
     synth = spec.get("synth") or ""
     pack = safe_name(spec.get("pack") or "")
     if not synth or not spec.get("presets"):
@@ -495,18 +533,15 @@ def write_pack(spec: dict, dry_run=False, overwrite=False, out_dir: Optional[Pat
                 "Character": item.get("character", ""),
             }
             path = dest / f"{name}.h2p"
-            if path.exists() and not overwrite:
+            base.base_path = resolve(item.get("from") or "", synth)
+            if check_exists and path.exists() and not overwrite:
                 raise UheError(f"{path} exists (use --overwrite)")
             plans.append((path, base, [f"from {base.name}"] + changes))
         except UheError as exc:
             problems.append(f"{label}: {exc}")
     if problems:
         raise UheError("nothing written:\n  " + "\n  ".join(problems))
-    if not dry_run:
-        dest.mkdir(parents=True, exist_ok=True)
-        for path, preset, _ in plans:
-            path.write_text(preset.text(), encoding="latin-1")
-    return [(path, changes) for path, _, changes in plans]
+    return plans
 
 
 # -- manuals -----------------------------------------------------------------
@@ -594,7 +629,7 @@ def main(argv=None) -> int:
     sub = ap.add_subparsers(dest="cmd", required=True)
     s = sub.add_parser("catalog"); s.add_argument("synth"); s.set_defaults(fn=cmd_catalog)
     s = sub.add_parser("find"); s.add_argument("synth"); s.add_argument("words", nargs="*")
-    s.add_argument("--category"); s.add_argument("--source", choices=["factory", "user", "empire"])
+    s.add_argument("--category"); s.add_argument("--source", choices=["factory", "user", "empire", "template"])
     s.add_argument("--limit", type=int, default=25); s.set_defaults(fn=cmd_find)
     s = sub.add_parser("show"); s.add_argument("preset"); s.add_argument("--synth", default="")
     s.add_argument("--module", action="append", help="repeat or comma-separate: --module Env1,LFO1")

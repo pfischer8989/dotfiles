@@ -90,6 +90,33 @@ class UheCase(unittest.TestCase):
         self.assertEqual(c["categories"]["Bass"]["count"], 2)
         self.assertEqual(c["categories"]["Bass:Analogue"]["params"]["VCF1.Freq"], 50.0)
 
+    def test_templates_are_found_first_and_refresh_the_catalog(self):
+        uhe.catalog_for("Diva")                       # built before the template exists
+        t = uhe.USER / "Diva" / "cListen4" / "Templates"
+        t.mkdir(parents=True)
+        (t / "Big Pad.h2p").write_text(PRESET.format(cat="Pads:Evolving", atk="5.00",
+                                                     freq="90.00"), encoding="latin-1")
+        import os
+        import time
+        later = time.time() + 5
+        os.utime(t / "Big Pad.h2p", (later, later))
+        c = uhe.catalog_for("Diva")                   # stale: rebuilt
+        kinds = {e["path"]: e["source"] for e in c["presets"]}
+        self.assertEqual(kinds[str(t / "Big Pad.h2p")], "template")
+        self.assertEqual(uhe.resolve("Big Pad", "Diva"), t / "Big Pad.h2p")
+        self.assertEqual(c["params"]["VCF1.Freq"]["max"], 120.0)   # ranges stay factory-only
+
+    def test_plan_pack_builds_in_memory_with_its_base(self):
+        plans = uhe.plan_pack(self.spec())
+        path, preset, changes = plans[0]
+        self.assertFalse(path.exists())
+        self.assertEqual(preset.get("VCF1.Freq"), "70.50")
+        self.assertEqual(preset.base_path.name, "Big Pad.h2p")
+        uhe.write_pack(self.spec())
+        with self.assertRaises(uhe.UheError):
+            uhe.plan_pack(self.spec())
+        self.assertEqual(len(uhe.plan_pack(self.spec(), check_exists=False)), 1)
+
     def test_pack_writes_validated_presets(self):
         written = uhe.write_pack(self.spec())
         path = uhe.USER / "Diva/cListen4/Test Pack/Dark Swell.h2p"
