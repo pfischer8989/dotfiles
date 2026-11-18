@@ -151,9 +151,9 @@ class Report(unittest.TestCase):
                     {"id": 2, "track": "Bass", "against": "Kick (Drums)", "bands": [{"type": "lowshelf", "hz": 100, "db": -2}]})
         # Bands 13-15 are 400-794 Hz; band 3 is 63 Hz.
         before = self.check({"Chords + Lead": {"13": 4.0, "14": 6.0, "15": 2.0}, "Bass + Kick (Drums)": {"3": 5.0}},
-                            {"Chords": -25.0, "Bass": -20.0}, -13.2)
+                            {"Chords": -25.0, "Bass": -20.0, "Lead": -22.0, "Kick (Drums)": -27.0}, -13.2)
         after = self.check({"Chords + Lead": {"13": 1.0, "14": 2.0}, "Bass + Kick (Drums)": {"3": 6.5}},
-                           {"Chords": -26.2, "Bass": -21.0}, -13.6,
+                           {"Chords": -26.2, "Bass": -21.0, "Lead": -22.0, "Kick (Drums)": -27.0}, -13.6,
                            [{"tracks": ["Chords", "Pad"], "low_hz": 177, "high_hz": 561, "change": "worse"}])
         result = mf.report(doc, after, before)
         one, two = result["fixes"]
@@ -163,6 +163,25 @@ class Report(unittest.TestCase):
         self.assertEqual(two["result"], "worse")
         self.assertEqual(result["mix_rms_change_db"], -0.4)
         self.assertIn("| 1 | Chords | Lead |", mf.markdown(result))
+
+    def test_a_track_missing_from_a_pass_isnt_called_better(self):
+        doc = fixes({"id": 1, "track": "Chords", "against": "Lead", "bands": [bell(700)]})
+        before = self.check({"Chords + Lead": {"14": 6.0}}, {"Chords": -25.0, "Lead": -20.0}, -13.0)
+        after = self.check({}, {"Lead": -20.0}, -13.5)
+        row = mf.report(doc, after, before)["fixes"][0]
+        self.assertTrue(row["result"].startswith("not measured: Chords"))
+        self.assertNotIn("after", row)
+
+    def test_a_track_relabelled_since_is_followed(self):
+        doc = fixes({"id": 2, "track": "Bass", "against": "Kick (track 13)", "bands": [bell(68, q=1.4)]})
+        before = self.check({"Bass + Kick (track 13)": {"3": 8.0}}, {"Bass": -20.0, "Kick (track 13)": -27.0}, -13.0)
+        before["tracks"][1]["track"] = "Kick 3/4"
+        after = self.check({"Bass + Kick (Atlas Kit)": {"3": 2.0}}, {"Bass": -21.0, "Kick (Atlas Kit)": -27.0}, -13.2)
+        after["tracks"][1].update(track="Kick 3/4", number=13)
+        after["tracks"][0].update(track="Bass", number=31)
+        row = mf.report(doc, after, before)["fixes"][0]
+        self.assertEqual((row["against"], row["before"], row["after"], row["result"]),
+                         ("Kick (Atlas Kit)", 8.0, 2.0, "better"))
 
     def test_ranges(self):
         self.assertEqual(mf.fix_range({"bands": [{"type": "highpass", "hz": 200}]}), (20.0, 280.0))

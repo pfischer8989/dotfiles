@@ -118,7 +118,7 @@ def read_track(entry, tables, label=None):
     rms = float(np.sqrt(np.mean(audio[:, :2] ** 2))) if audio.size else 0.0
     left, spectrum = measure_channel(audio[:, 0], rate, tables)
     right, spectrum_right = measure_channel(audio[:, 1], rate, tables)
-    return {"name": label or clean_name(entry["name"]), "track": entry["name"], "role": entry.get("role", "source"),
+    return {"name": label or clean_name(entry["name"]), "track": entry["name"], "number": track_number(entry), "role": entry.get("role", "source"),
             "bands": np.stack([left, right]), "spectrum": (spectrum + spectrum_right) / 2,
             "peak_db": 20 * np.log10(max(peak, 1e-9)), "rms_db": 20 * np.log10(max(rms, 1e-9))}, rate
 
@@ -149,6 +149,37 @@ def labels(entries):
             out.append(f"{name} ({e['parent']})")
         else:
             out.append(f"{name} (track {track_number(e)})")
+    return out
+
+
+def relabel(earlier, tracks):
+    """Earlier label -> today's, for tracks whose label changed between passes (an
+    older print named a second "Kick" by track number, a newer one by its folder).
+    Matched by track number and name."""
+    now = {(t.get("number"), clean_name(t.get("track", t["name"]))): t["name"] for t in tracks}
+    out = {}
+    for t in earlier.get("tracks", []):
+        number = t.get("number")
+        if number is None:
+            found = re.search(r"\(track (\d+)\)$", t["name"])
+            number = int(found.group(1)) if found else None
+        base = clean_name(t.get("track", re.sub(r" \([^)]*\)$", "", t["name"])))
+        label = now.get((number, base))
+        if label and label != t["name"]:
+            out[t["name"]] = label
+    return out
+
+
+def renamed(earlier, names):
+    """An earlier mix-check result with its tracks under today's labels."""
+    if not names:
+        return earlier
+    def key(k):
+        return " + ".join(sorted(names.get(n, n) for n in k.split(" + ")))
+    out = dict(earlier)
+    out["band_scores"] = {key(k): v for k, v in earlier.get("band_scores", {}).items()}
+    out["findings"] = [dict(f, tracks=[names.get(n, n) for n in f["tracks"]]) for f in earlier.get("findings", [])]
+    out["tracks"] = [dict(t, name=names.get(t["name"], t["name"])) for t in earlier.get("tracks", [])]
     return out
 
 
@@ -410,7 +441,7 @@ def check(folder, previous=None):
     findings = findings[:MAX_FINDINGS]
     result = {"schema": "empire.mix-check/v1", "session": doc.get("session", ""), "findings": findings,
               "band_scores": band_scores, "silent": silent,
-              "tracks": [{"name": t["name"], "track": t["track"], "role": t["role"], "peak_db": round(t["peak_db"], 1),
+              "tracks": [{"name": t["name"], "track": t["track"], "number": t["number"], "role": t["role"], "peak_db": round(t["peak_db"], 1),
                           "rms_db": round(t["rms_db"], 1)} for t in tracks]}
     if doc.get("mix") and os.path.exists(doc["mix"]):
         audio, _ = read_wav(doc["mix"])
@@ -418,7 +449,11 @@ def check(folder, previous=None):
                          "rms_db": round(float(20 * np.log10(max(np.sqrt(np.mean(audio ** 2)), 1e-9))), 1)}
     if previous:
         with open(os.path.join(previous, "mix-check.json")) as f:
-            result["improved"] = compare(findings, json.load(f), band_scores)
+            earlier = json.load(f)
+        names = relabel(earlier, result["tracks"])
+        result["improved"] = compare(findings, renamed(earlier, names), band_scores)
+        if names:
+            result["renamed"] = names
         result["compared_with"] = previous
     return result
 

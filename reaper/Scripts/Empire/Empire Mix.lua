@@ -608,8 +608,21 @@ local function add_keys(track, fx, keys)
     mainsend = R.GetMediaTrackInfo_Value(track, "C_MAINSEND_NCH") }
   if state.nchan < 4 then R.SetMediaTrackInfo_Value(track, "I_NCHAN", 4) end
   R.SetMediaTrackInfo_Value(track, "C_MAINSEND_NCH", 2)
-  R.TrackFX_SetPinMappings(track, fx, 0, 2, 1 << 2, 0) -- sidechain in from channels 3/4
-  R.TrackFX_SetPinMappings(track, fx, 0, 3, 1 << 3, 0)
+  -- The VST3 has four main inputs and then its sidechain ("SideChain 1".."4"). The key
+  -- on channels 3/4 goes to SideChain 1/2, and main inputs 3/4 hear nothing.
+  local _, pins = R.TrackFX_GetIOSize(track, fx)
+  local side = {}
+  for pin = 0, (pins or 0) - 1 do
+    local _, name = R.TrackFX_GetNamedConfigParm(track, fx, "in_pin_" .. pin)
+    if (name or ""):lower():match("^side%s*chain") then side[#side + 1] = pin end
+  end
+  if #side < 2 then error("TB Equalizer Pro shows no sidechain inputs on " .. name_of(track)) end
+  for pin = 0, pins - 1 do
+    local bits = 0
+    if pin == 0 or pin == 1 then bits = 1 << pin end
+    if pin == side[1] then bits = 1 << 2 elseif pin == side[2] then bits = 1 << 3 end
+    R.TrackFX_SetPinMappings(track, fx, 0, pin, bits, 0)
+  end
   for _, key in ipairs(keys) do
     local s = R.CreateTrackSend(key, track)
     R.SetTrackSendInfo_Value(key, 0, s, "I_SRCCHAN", 0)

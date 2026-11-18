@@ -251,22 +251,30 @@ def levels(check):
 
 
 def report(doc, after, before):
+    """Fixes name tracks as the earlier pass did; a track whose label has changed since
+    is found under its new one."""
+    from mix_check import relabel, renamed
+    names = relabel(before, after.get("tracks", []))
+    before = renamed(before, names)
     now, then = levels(after), levels(before)
     rows = []
     for fix in doc["fixes"]:
         low, high = fix_range(fix)
-        row = {"id": fix.get("id"), "track": fix["track"], "against": fix.get("against"),
-               "hz": [round(low), round(high)]}
-        if fix.get("against"):
-            row["before"] = pair_score(before, fix["track"], fix["against"], low, high)
-            row["after"] = pair_score(after, fix["track"], fix["against"], low, high)
+        track, against = names.get(fix["track"], fix["track"]), names.get(fix.get("against"), fix.get("against"))
+        row = {"id": fix.get("id"), "track": track, "against": against, "hz": [round(low), round(high)]}
+        missing = [n for n in (track, against) if n and (n not in now or n not in then)]
+        if missing:
+            row["result"] = "not measured: " + ", ".join(missing) + " not printed in both passes (muted or silent?)"
+        elif against:
+            row["before"] = pair_score(before, track, against, low, high)
+            row["after"] = pair_score(after, track, against, low, high)
             row["result"] = verdict(row["before"], row["after"])
-        if fix["track"] in now and fix["track"] in then:
-            row["track_rms_change_db"] = round(now[fix["track"]] - then[fix["track"]], 1)
+        if track in now and track in then:
+            row["track_rms_change_db"] = round(now[track] - then[track], 1)
         row["worse_elsewhere"] = [f"{' + '.join(f['tracks'])} {f['low_hz']}-{f['high_hz']} Hz ({f['change']})"
                                   for f in after.get("findings", [])
-                                  if fix["track"] in f["tracks"] and f.get("change") in ("worse", "new")
-                                  and set(f["tracks"]) != {fix["track"], fix.get("against")}]
+                                  if track in f["tracks"] and f.get("change") in ("worse", "new")
+                                  and set(f["tracks"]) != {track, against}]
         rows.append(row)
     out = {"schema": "empire.mixfix-report/v1", "fixes": rows}
     if after.get("mix") and before.get("mix"):
@@ -286,7 +294,8 @@ def verdict(before, after):
 
 def markdown(result):
     lines = ["# What the fixes did", "",
-             "Measured, not heard: \"better\" means the clash scores lower, not that it sounds better.", "",
+             "Measured, not heard: \"better\" means the clash scores lower, not that it sounds better. "
+             "Anything else that changed in the session since the earlier pass shows up here too.", "",
              "| Fix | Track | Against | Hz | Clash before | After | Result | Track level | Worse elsewhere |",
              "|---|---|---|---|---|---|---|---|---|"]
     for r in result["fixes"]:
