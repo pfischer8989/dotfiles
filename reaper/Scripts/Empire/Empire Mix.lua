@@ -617,12 +617,6 @@ local function add_keys(track, fx, keys)
     if (name or ""):lower():match("^side%s*chain") then side[#side + 1] = pin end
   end
   if #side < 2 then error("TB Equalizer Pro shows no sidechain inputs on " .. name_of(track)) end
-  for pin = 0, pins - 1 do
-    local bits = 0
-    if pin == 0 or pin == 1 then bits = 1 << pin end
-    if pin == side[1] then bits = 1 << 2 elseif pin == side[2] then bits = 1 << 3 end
-    R.TrackFX_SetPinMappings(track, fx, 0, pin, bits, 0)
-  end
   for _, key in ipairs(keys) do
     local s = R.CreateTrackSend(key, track)
     R.SetTrackSendInfo_Value(key, 0, s, "I_SRCCHAN", 0)
@@ -633,6 +627,43 @@ local function add_keys(track, fx, keys)
   end
   R.GetSetMediaTrackInfo_String(track, FIX_EXT, string.format("keys=%s;nchan=%d;mainsend=%d",
     table.concat(guids, ","), math.floor(state.nchan), math.floor(state.mainsend)), true)
+  return { track = track, fx = fx, pins = pins, side = side }
+end
+
+-- The pins are set once the plugin has taken its Ext input: switching it makes REAPER
+-- lay the sidechain pins out again a moment later, over anything set before.
+local function wire(w)
+  for pin = 0, w.pins - 1 do
+    local bits = 0
+    if pin == 0 or pin == 1 then bits = 1 << pin end
+    if pin == w.side[1] then bits = 1 << 2 elseif pin == w.side[2] then bits = 1 << 3 end
+    R.TrackFX_SetPinMappings(w.track, w.fx, 0, pin, bits, 0)
+  end
+end
+
+local function wired(w)
+  return R.TrackFX_GetPinMappings(w.track, w.fx, 0, w.side[1]) == 1 << 2
+    and R.TrackFX_GetPinMappings(w.track, w.fx, 0, w.side[2]) == 1 << 3
+    and R.TrackFX_GetPinMappings(w.track, w.fx, 0, 2) == 0
+end
+
+local SETTLE_SECONDS, CHECKS = 1.0, 4
+
+-- Waits, wires, waits again and checks, a few times, then saves and answers.
+local function wire_then(wiring, done)
+  local round, at = 0, R.time_precise()
+  local function step()
+    if R.time_precise() - at < SETTLE_SECONDS then return R.defer(step) end
+    local all = true
+    for _, w in ipairs(wiring) do all = all and wired(w) end
+    if all and round > 0 then return done(true) end
+    round = round + 1
+    if round > CHECKS then return done(false) end
+    for _, w in ipairs(wiring) do wire(w) end
+    at = R.time_precise()
+    R.defer(step)
+  end
+  step()
 end
 
 local function fix(request)
@@ -668,7 +699,7 @@ local function fix(request)
   R.Undo_BeginBlock()
   R.PreventUIRefresh(1)
   clear_fixes()
-  local applied = {}
+  local applied, wiring = {}, {}
   for _, t in ipairs(targets) do
     local fx = R.TrackFX_AddByName(t.track, FIX_FX, false, -1)
     if fx < 0 then error("couldn't add " .. FIX_FX .. " to " .. t.entry.name) end
@@ -677,15 +708,24 @@ local function fix(request)
     for i, band in ipairs(t.entry.bands) do bands[i] = set_band(t.track, fx, map, i, band) end
     if #t.keys > 0 then
       set_text(t.track, fx, param(map, "inputbus"), "Ext")
-      add_keys(t.track, fx, t.keys)
+      wiring[#wiring + 1] = add_keys(t.track, fx, t.keys)
     end
     applied[#applied + 1] = { name = t.entry.name, bands = bands }
   end
   R.PreventUIRefresh(-1)
   R.UpdateArrange()
   R.Undo_EndBlock("Empire: fix the mix", -1)
-  R.Main_SaveProject(0, false)
-  answer({ ok = true, fixed = request.mix, applied = applied })
+  local tab = R.EnumProjects(-1)
+  wire_then(wiring, function(ok)
+    local ok_save = pcall(function()
+      R.SelectProjectInstance(tab)
+      R.Main_SaveProject(tab, false)
+    end)
+    if not ok then
+      return answer({ ok = false, message = "the sidechain pins of TB Equalizer Pro wouldn't stay on channels 3/4" })
+    end
+    answer({ ok = ok_save, fixed = request.mix, applied = applied, message = ok_save and nil or "couldn't save" })
+  end)
 end
 
 local ACTIONS = { print = print_pass, fix = fix, bounce = bounce }
