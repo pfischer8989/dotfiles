@@ -722,7 +722,14 @@ local function fix(request)
       R.Main_SaveProject(tab, false)
     end)
     if not ok then
-      return answer({ ok = false, message = "the sidechain pins of TB Equalizer Pro wouldn't stay on channels 3/4" })
+      local seen = {}
+      for _, w in ipairs(wiring) do
+        local pins = {}
+        for pin = 0, w.pins - 1 do pins[#pins + 1] = pin .. "=" .. R.TrackFX_GetPinMappings(w.track, w.fx, 0, pin) end
+        seen[#seen + 1] = name_of(w.track) .. " " .. table.concat(pins, " ")
+      end
+      return answer({ ok = false, message = "the sidechain pins of TB Equalizer Pro wouldn't stay on channels 3/4 ("
+        .. table.concat(seen, "; ") .. ")" })
     end
     answer({ ok = ok_save, fixed = request.mix, applied = applied, message = ok_save and nil or "couldn't save" })
   end)
