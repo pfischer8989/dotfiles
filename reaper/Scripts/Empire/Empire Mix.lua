@@ -659,7 +659,13 @@ local function wire_then(wiring, done)
     if all and round > 0 then return done(true) end
     round = round + 1
     if round > CHECKS then return done(false) end
-    for _, w in ipairs(wiring) do wire(w) end
+    for _, w in ipairs(wiring) do
+      if round == 1 then -- load it again, so it opens its sidechain with Ext already set
+        R.TrackFX_SetOffline(w.track, w.fx, true)
+        R.TrackFX_SetOffline(w.track, w.fx, false)
+      end
+      wire(w)
+    end
     at = R.time_precise()
     R.defer(step)
   end
