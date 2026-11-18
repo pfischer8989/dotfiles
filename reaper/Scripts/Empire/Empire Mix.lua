@@ -608,15 +608,6 @@ local function add_keys(track, fx, keys)
     mainsend = R.GetMediaTrackInfo_Value(track, "C_MAINSEND_NCH") }
   if state.nchan < 4 then R.SetMediaTrackInfo_Value(track, "I_NCHAN", 4) end
   R.SetMediaTrackInfo_Value(track, "C_MAINSEND_NCH", 2)
-  -- The VST3 has four main inputs and then its sidechain ("SideChain 1".."4"). The key
-  -- on channels 3/4 goes to SideChain 1/2, and main inputs 3/4 hear nothing.
-  local _, pins = R.TrackFX_GetIOSize(track, fx)
-  local side = {}
-  for pin = 0, (pins or 0) - 1 do
-    local _, name = R.TrackFX_GetNamedConfigParm(track, fx, "in_pin_" .. pin)
-    if (name or ""):lower():match("^side%s*chain") then side[#side + 1] = pin end
-  end
-  if #side < 2 then error("TB Equalizer Pro shows no sidechain inputs on " .. name_of(track)) end
   for _, key in ipairs(keys) do
     local s = R.CreateTrackSend(key, track)
     R.SetTrackSendInfo_Value(key, 0, s, "I_SRCCHAN", 0)
@@ -627,24 +618,42 @@ local function add_keys(track, fx, keys)
   end
   R.GetSetMediaTrackInfo_String(track, FIX_EXT, string.format("keys=%s;nchan=%d;mainsend=%d",
     table.concat(guids, ","), math.floor(state.nchan), math.floor(state.mainsend)), true)
-  return { track = track, fx = fx, pins = pins, side = side }
+  return { track = track, fx = fx }
+end
+
+-- The plugin's inputs as they're laid out now: they change once it has taken its Ext
+-- input and been loaded again (four main inputs and SideChain 1-4 before, Input L/R
+-- and SideChain L/R after). Returns the input count and the sidechain pins.
+local function layout(w)
+  local _, pins = R.TrackFX_GetIOSize(w.track, w.fx)
+  local side = {}
+  for pin = 0, (pins or 0) - 1 do
+    local _, name = R.TrackFX_GetNamedConfigParm(w.track, w.fx, "in_pin_" .. pin)
+    if (name or ""):lower():match("^side%s*chain") then side[#side + 1] = pin end
+  end
+  return pins or 0, side
 end
 
 -- The pins are set once the plugin has taken its Ext input: switching it makes REAPER
 -- lay the sidechain pins out again a moment later, over anything set before.
+local function wanted_bits(pin, side)
+  if pin == side[1] then return 1 << 2 elseif pin == side[2] then return 1 << 3 end
+  if pin == 0 or pin == 1 then return 1 << pin end
+  return 0
+end
+
 local function wire(w)
-  for pin = 0, w.pins - 1 do
-    local bits = 0
-    if pin == 0 or pin == 1 then bits = 1 << pin end
-    if pin == w.side[1] then bits = 1 << 2 elseif pin == w.side[2] then bits = 1 << 3 end
-    R.TrackFX_SetPinMappings(w.track, w.fx, 0, pin, bits, 0)
-  end
+  local pins, side = layout(w)
+  for pin = 0, pins - 1 do R.TrackFX_SetPinMappings(w.track, w.fx, 0, pin, wanted_bits(pin, side), 0) end
 end
 
 local function wired(w)
-  return R.TrackFX_GetPinMappings(w.track, w.fx, 0, w.side[1]) == 1 << 2
-    and R.TrackFX_GetPinMappings(w.track, w.fx, 0, w.side[2]) == 1 << 3
-    and R.TrackFX_GetPinMappings(w.track, w.fx, 0, 2) == 0
+  local pins, side = layout(w)
+  if #side < 2 then return false end
+  for pin = 0, pins - 1 do
+    if R.TrackFX_GetPinMappings(w.track, w.fx, 0, pin) ~= wanted_bits(pin, side) then return false end
+  end
+  return true
 end
 
 local SETTLE_SECONDS, CHECKS = 1.0, 4
@@ -731,7 +740,10 @@ local function fix(request)
       local seen = {}
       for _, w in ipairs(wiring) do
         local pins = {}
-        for pin = 0, w.pins - 1 do pins[#pins + 1] = pin .. "=" .. R.TrackFX_GetPinMappings(w.track, w.fx, 0, pin) end
+        for pin = 0, (layout(w)) - 1 do
+          local _, pin_name = R.TrackFX_GetNamedConfigParm(w.track, w.fx, "in_pin_" .. pin)
+          pins[#pins + 1] = pin_name .. "=" .. R.TrackFX_GetPinMappings(w.track, w.fx, 0, pin)
+        end
         seen[#seen + 1] = name_of(w.track) .. " " .. table.concat(pins, " ")
       end
       return answer({ ok = false, message = "the sidechain pins of TB Equalizer Pro wouldn't stay on channels 3/4 ("
