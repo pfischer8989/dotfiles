@@ -118,6 +118,19 @@ class Apply(unittest.TestCase):
         self.assertEqual(mix.session_info(again["mix"])["reference"], self.pass1)
         self.assertEqual(mix.last_pass(again["mix"]), self.pass1)
 
+    def test_a_reapply_answers_the_check_not_the_fix_test_print(self):
+        self.write(fixes({"id": 1, "track": "Chords", "bands": [bell()]}))
+        first = self.apply()
+        tested = os.path.join(first["mix"][: -len(".RPP")], "passes", "pass-1")
+        os.makedirs(tested)
+        with open(os.path.join(tested, "print.json"), "w") as f:
+            json.dump({"tracks": [{"name": "Lead", "file": "/q/41 Lead.wav", "number": 41}]}, f)
+        with open(os.path.join(tested, "fix-report.json"), "w") as f:
+            f.write("{}")
+        again = self.apply("20260103-000000")  # Chords isn't in the fix-test print, but is in the check
+        self.assertEqual(mix.session_info(again["mix"])["reference"], self.pass1)
+        self.assertEqual(mix.last_pass(again["mix"]), tested)
+
     def test_a_bad_list_makes_nothing(self):
         self.write(fixes({"id": 1, "track": "Chords", "bands": [bell(db=-20)]}))
         with self.assertRaises(mf.FixError):

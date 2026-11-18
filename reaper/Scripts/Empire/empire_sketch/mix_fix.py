@@ -18,7 +18,8 @@ Paul's own plugins aren't touched. Then `mix.py print` prints the new session an
               "duck": {"key": "Lead", "db": -5}}]},
   {"id": 2, "track": "Chords", "against": "Bass", "bands": [{"type": "highpass", "hz": 180, "slope": 12}]}]}
 
-Tracks are named as mix_check.py names them ("Kick (Drums Live)" when two share a name).
+Tracks are named as mix_check.py names them ("Kick (Drums Live)" when two share a name)
+in the newest pass that wasn't printed to test a fix: the check the fixes answer.
 A band is a bell, lowshelf or highshelf (hz, db, q) or a highpass or lowpass (hz, slope in
 dB per octave). A duck makes the band cut by up to its db while the key track plays in
 that band, through the track's sidechain; its threshold_db defaults to 12 dB under the
@@ -191,7 +192,7 @@ def request_tracks(doc, refs, threshold=key_threshold):
 def apply_request(song, root, fixes_path, now=time.strftime, threshold=key_threshold):
     folder = os.path.join(root, slug(song))
     base = mix.current_session(folder)
-    reference = mix.last_pass(base)
+    reference = mix.last_pass(base, checks_only=True)  # what the fixes were written against
     if not reference:
         raise FixError(f"{os.path.basename(base)} has no printed pass to work from. Run `mix.py print` first.")
     with open(os.path.join(reference, "print.json")) as f:

@@ -77,8 +77,9 @@ def current_session(folder, session=None):
     return mix
 
 
-def last_pass(session):
-    """The newest printed pass of a session, or of the session it was made from."""
+def last_pass(session, checks_only=False):
+    """The newest printed pass of a session, or of the session it was made from. With
+    checks_only, passes printed to test a fix (they hold fix-report.json) don't count."""
     seen = set()
     while session and session not in seen:
         seen.add(session)
@@ -86,7 +87,8 @@ def last_pass(session):
         numbers = [int(m.group(1)) for m in (re.fullmatch(r"pass-(\d+)", n) for n in
                                              (os.listdir(passes) if os.path.isdir(passes) else [])) if m]
         found = [n for n in sorted(numbers, reverse=True)
-                 if os.path.exists(os.path.join(passes, f"pass-{n}", "print.json"))]
+                 if os.path.exists(os.path.join(passes, f"pass-{n}", "print.json"))
+                 and not (checks_only and os.path.exists(os.path.join(passes, f"pass-{n}", "fix-report.json")))]
         if found:
             return os.path.join(passes, f"pass-{found[0]}")
         session = session_info(session).get("from")
