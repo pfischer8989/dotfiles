@@ -456,6 +456,10 @@ local FIX_FX = "VST3: TB Equalizer Pro (ToneBoosters)"
 local FIX_NAME = "TB Equalizer Pro (Empire Fix)"
 local FIX_EXT = "P_EXT:empire_fix"
 local FIX_TYPES = { bell = 0, lowshelf = 1, highshelf = 2, highpass = 6, lowpass = 7 }
+-- The same filters with their dynamics keyed by the sidechain input instead of the
+-- track (measured: type 31 cut the Bass on the kick's hits and not at all with the key
+-- muted, where type 0 cut it on its own level either way).
+local KEYED_TYPES = { bell = 31, lowshelf = 32, highshelf = 33 }
 
 local function is_fix_fx(track, fx)
   local _, renamed = R.TrackFX_GetNamedConfigParm(track, fx, "renamed_name")
@@ -564,24 +568,13 @@ local function set_number(track, fx, p, want)
   return shown
 end
 
-local function set_text(track, fx, p, want)
-  for step = 0, 100 do
-    local _, text = value_at(track, fx, p, step / 100)
-    if (text or ""):lower():match("^%s*" .. want:lower()) then
-      R.TrackFX_SetParamNormalized(track, fx, p, step / 100)
-      return text
-    end
-  end
-  error("no setting " .. want .. " for parameter " .. p)
-end
-
 local function set_band(track, fx, map, i, band)
   local n = tostring(i)
   local function p(base, unit) return param(map, base .. n .. (unit or ""), base .. n) end
   local shown = { type = band.type }
   R.TrackFX_SetParamNormalized(track, fx, p("visible"), 1)
   R.TrackFX_SetParamNormalized(track, fx, p("enable"), 1)
-  set_number(track, fx, p("type"), FIX_TYPES[band.type])
+  set_number(track, fx, p("type"), band.duck and KEYED_TYPES[band.type] or FIX_TYPES[band.type])
   shown.hz = set_number(track, fx, p("frequency", "hz"), band.hz)
   if band.type == "highpass" or band.type == "lowpass" then
     shown.slope = set_number(track, fx, p("order"), band.slope or 12)
@@ -621,9 +614,9 @@ local function add_keys(track, fx, keys)
   return { track = track, fx = fx }
 end
 
--- The plugin's inputs as they're laid out now: they change once it has taken its Ext
--- input and been loaded again (four main inputs and SideChain 1-4 before, Input L/R
--- and SideChain L/R after). Returns the input count and the sidechain pins.
+-- The plugin's inputs as they're laid out now: they change once it has been loaded
+-- again (four main inputs and SideChain 1-4 before, Input L/R and SideChain L/R
+-- after). Returns the input count and the sidechain pins.
 local function layout(w)
   local _, pins = R.TrackFX_GetIOSize(w.track, w.fx)
   local side = {}
@@ -634,8 +627,8 @@ local function layout(w)
   return pins or 0, side
 end
 
--- The pins are set once the plugin has taken its Ext input: switching it makes REAPER
--- lay the sidechain pins out again a moment later, over anything set before.
+-- The sidechain pins are set after the plugin has been loaded again with its keyed
+-- bands: REAPER lays its inputs out afresh then, over anything set before.
 local function wanted_bits(pin, side)
   if pin == side[1] then return 1 << 2 elseif pin == side[2] then return 1 << 3 end
   if pin == 0 or pin == 1 then return 1 << pin end
@@ -669,7 +662,7 @@ local function wire_then(wiring, done)
     round = round + 1
     if round > CHECKS then return done(false) end
     for _, w in ipairs(wiring) do
-      if round == 1 then -- load it again, so it opens its sidechain with Ext already set
+      if round == 1 then -- load it again, so it opens its sidechain for the keyed bands
         R.TrackFX_SetOffline(w.track, w.fx, true)
         R.TrackFX_SetOffline(w.track, w.fx, false)
       end
@@ -722,7 +715,6 @@ local function fix(request)
     local map, bands = param_names(t.track, fx), {}
     for i, band in ipairs(t.entry.bands) do bands[i] = set_band(t.track, fx, map, i, band) end
     if #t.keys > 0 then
-      set_text(t.track, fx, param(map, "inputbus"), "Ext")
       wiring[#wiring + 1] = add_keys(t.track, fx, t.keys)
     end
     applied[#applied + 1] = { name = t.entry.name, bands = bands }
