@@ -108,7 +108,7 @@ def to_db(power):
     return 10 * np.log10(np.maximum(power, 1e-12))
 
 
-def read_track(entry, tables):
+def read_track(entry, tables, label=None):
     audio, rate = read_wav(entry["file"])
     gain = 10 ** (entry.get("bus_gain_db", 0) / 20)
     audio = audio.astype(np.float32) * gain
@@ -118,13 +118,38 @@ def read_track(entry, tables):
     rms = float(np.sqrt(np.mean(audio[:, :2] ** 2))) if audio.size else 0.0
     left, spectrum = measure_channel(audio[:, 0], rate, tables)
     right, spectrum_right = measure_channel(audio[:, 1], rate, tables)
-    return {"name": clean_name(entry["name"]), "track": entry["name"], "role": entry.get("role", "source"),
+    return {"name": label or clean_name(entry["name"]), "track": entry["name"], "role": entry.get("role", "source"),
             "bands": np.stack([left, right]), "spectrum": (spectrum + spectrum_right) / 2,
             "peak_db": 20 * np.log10(max(peak, 1e-9)), "rms_db": 20 * np.log10(max(rms, 1e-9))}, rate
 
 
 def clean_name(name):
     return re.sub(r"\s+\d+/\d+$", "", name)
+
+
+def track_number(entry):
+    if entry.get("number"):
+        return int(entry["number"])
+    found = re.match(r"(\d+) ", os.path.basename(entry.get("file", "")))
+    return int(found.group(1)) if found else None
+
+
+def labels(entries):
+    """A name per printed track that no other track has. Two kits can both have a "Kick":
+    those get their folder, "Kick (Drums Live)", or failing that their track number."""
+    names = [clean_name(e["name"]) for e in entries]
+    out = []
+    for e, name in zip(entries, names):
+        if names.count(name) == 1:
+            out.append(name)
+            continue
+        same = [x for x, n in zip(entries, names) if n == name]
+        parents = [x.get("parent") or "" for x in same]
+        if e.get("parent") and parents.count(e["parent"]) == 1:
+            out.append(f"{name} ({e['parent']})")
+        else:
+            out.append(f"{name} (track {track_number(e)})")
+    return out
 
 
 def tilt_db():
@@ -358,11 +383,11 @@ def check(folder, previous=None):
     with open(os.path.join(folder, "print.json")) as f:
         doc = json.load(f)
     rate, tables, tracks, silent = None, None, [], []
-    for entry in doc["tracks"]:
+    for entry, label in zip(doc["tracks"], labels(doc["tracks"])):
         if tables is None:
             _, rate = read_wav(entry["file"])
             tables = band_tables(rate)
-        track, _ = read_track(entry, tables)
+        track, _ = read_track(entry, tables, label)
         if track["peak_db"] < -90:
             silent.append(track["name"])
         else:
@@ -385,7 +410,7 @@ def check(folder, previous=None):
     findings = findings[:MAX_FINDINGS]
     result = {"schema": "empire.mix-check/v1", "session": doc.get("session", ""), "findings": findings,
               "band_scores": band_scores, "silent": silent,
-              "tracks": [{"name": t["name"], "role": t["role"], "peak_db": round(t["peak_db"], 1),
+              "tracks": [{"name": t["name"], "track": t["track"], "role": t["role"], "peak_db": round(t["peak_db"], 1),
                           "rms_db": round(t["rms_db"], 1)} for t in tracks]}
     if doc.get("mix") and os.path.exists(doc["mix"]):
         audio, _ = read_wav(doc["mix"])

@@ -14,6 +14,8 @@
 --
 -- print: prints the saved mix session as it stands, tracks and returns, plus the
 -- full mix through the master chain, so mix_check.py can measure them.
+--
+-- fix: opens a copy of a mix session and writes Empire's EQ moves into it (below).
 
 local R = reaper
 local HERE = ({ R.get_action_context() })[2]:match("^(.*)[/\\]")
@@ -432,7 +434,9 @@ local function print_pass(request)
     if not file then
       return answer({ ok = false, message = "REAPER didn't print " .. name_of(t) })
     end
-    listed[#listed + 1] = { name = name_of(t), file = file, role = roles[i], bus_gain_db = bus_gain_db(t) }
+    local parent = R.GetParentTrack(t)
+    listed[#listed + 1] = { name = name_of(t), file = file, role = roles[i], bus_gain_db = bus_gain_db(t),
+      guid = R.GetTrackGUID(t), parent = parent and name_of(parent) or "", number = number_of(t) }
   end
   write_json(request.folder .. "/print.json", { schema = "empire.mixprint/v1", session = request.mix,
     master = request.master, markers = markers, song_end = song_end, bars = bars, tracks = listed,
@@ -442,11 +446,242 @@ local function print_pass(request)
   answer({ ok = true, folder = request.folder, tracks = #listed, seconds = math.floor(R.time_precise() - started) })
 end
 
+-- fix: Empire's EQ moves, in a TB Equalizer Pro of their own on each track ("Empire
+-- Fix"), after whatever is on the track. The request holds every move the session
+-- should have, so earlier Empire Fix instances and their key sends go first. A
+-- ducking band listens to its key tracks, sent to the track's channels 3/4; the
+-- track's send to its folder stays on 1/2 so the key isn't heard.
+
+local FIX_FX = "VST3: TB Equalizer Pro (ToneBoosters)"
+local FIX_NAME = "TB Equalizer Pro (Empire Fix)"
+local FIX_EXT = "P_EXT:empire_fix"
+local FIX_TYPES = { bell = 0, lowshelf = 1, highshelf = 2, highpass = 6, lowpass = 7 }
+
+local function is_fix_fx(track, fx)
+  local _, renamed = R.TrackFX_GetNamedConfigParm(track, fx, "renamed_name")
+  return renamed == FIX_NAME
+end
+
+local function fix_state(track)
+  local _, s = R.GetSetMediaTrackInfo_String(track, FIX_EXT, "", false)
+  local t = {}
+  for k, v in s:gmatch("([%w_]+)=([^;]*)") do t[k] = v end
+  return t
+end
+
+local function clear_fixes()
+  local guids = {}
+  for i = 0, R.CountTracks(0) - 1 do
+    local t = R.GetTrack(0, i)
+    guids[R.GetTrackGUID(t)] = t
+  end
+  for _, track in pairs(guids) do
+    for fx = R.TrackFX_GetCount(track) - 1, 0, -1 do
+      if is_fix_fx(track, fx) then R.TrackFX_Delete(track, fx) end
+    end
+    local state = fix_state(track)
+    if state.keys then
+      local keys = {}
+      for g in state.keys:gmatch("[^,]+") do keys[g] = true end
+      for i = R.GetTrackNumSends(track, -1) - 1, 0, -1 do
+        local source = R.GetTrackSendInfo_Value(track, -1, i, "P_SRCTRACK")
+        if source and keys[R.GetTrackGUID(source)] and R.GetTrackSendInfo_Value(track, -1, i, "I_DSTCHAN") == 2 then
+          R.RemoveTrackSend(track, -1, i)
+        end
+      end
+      R.SetMediaTrackInfo_Value(track, "I_NCHAN", tonumber(state.nchan) or 2)
+      R.SetMediaTrackInfo_Value(track, "C_MAINSEND_NCH", tonumber(state.mainsend) or 0)
+    end
+    R.GetSetMediaTrackInfo_String(track, FIX_EXT, "", true)
+  end
+end
+
+-- A track named by GUID, else by number and name, else by a name only it has.
+local function find_track(ref)
+  local by_name, count = nil, 0
+  for i = 0, R.CountTracks(0) - 1 do
+    local t = R.GetTrack(0, i)
+    if ref.guid and ref.guid ~= "" and R.GetTrackGUID(t) == ref.guid then return t end
+    if name_of(t) == ref.name then
+      if ref.number and number_of(t) == ref.number then return t end
+      by_name, count = t, count + 1
+    end
+  end
+  if count == 1 and not (ref.guid and ref.guid ~= "") then return by_name end
+  return nil
+end
+
+local function param_names(track, fx)
+  local map = {}
+  for p = 0, R.TrackFX_GetNumParams(track, fx) - 1 do
+    local _, name = R.TrackFX_GetParamName(track, fx, p, "")
+    map[(name:lower():gsub("[^%w]", ""))] = p
+  end
+  return map
+end
+
+local function param(map, ...)
+  for _, candidate in ipairs({ ... }) do
+    if map[candidate] then return map[candidate] end
+  end
+  local some = {}
+  for k in pairs(map) do if #some < 12 then some[#some + 1] = k end end
+  error("TB Equalizer Pro has no parameter " .. ({ ... })[1] .. " (it has " .. table.concat(some, ", ") .. ", ...)")
+end
+
+local function number_in(text)
+  local n, k = (text or ""):match("(%-?[%d%.]+)%s*([kK]?)")
+  n = tonumber(n)
+  if n and k ~= "" then n = n * 1000 end
+  return n
+end
+
+local function value_at(track, fx, p, v)
+  local ok, text = R.TrackFX_FormatParamValueNormalized(track, fx, p, v, "")
+  if ok and text ~= "" then return number_in(text), text end
+  R.TrackFX_SetParamNormalized(track, fx, p, v)
+  local _, shown = R.TrackFX_GetFormattedParamValue(track, fx, p, "")
+  return number_in(shown), shown
+end
+
+-- Sets a parameter to the value it shows as `want`, searching its 0..1 range.
+local function set_number(track, fx, p, want)
+  local low, high = value_at(track, fx, p, 0), value_at(track, fx, p, 1)
+  if not low or not high then error("can't read parameter " .. p .. " as a number") end
+  local rising, a, b = high > low, 0, 1
+  for _ = 1, 40 do
+    local mid = (a + b) / 2
+    local v = value_at(track, fx, p, mid)
+    if v and ((v < want) == rising) then a = mid else b = mid end
+  end
+  local best, best_off = a, math.huge
+  for _, v in ipairs({ a, b }) do
+    local shown = value_at(track, fx, p, v)
+    if shown and math.abs(shown - want) < best_off then best, best_off = v, math.abs(shown - want) end
+  end
+  R.TrackFX_SetParamNormalized(track, fx, p, best)
+  local _, shown = R.TrackFX_GetFormattedParamValue(track, fx, p, "")
+  return shown
+end
+
+local function set_text(track, fx, p, want)
+  for step = 0, 100 do
+    local _, text = value_at(track, fx, p, step / 100)
+    if (text or ""):lower():match("^%s*" .. want:lower()) then
+      R.TrackFX_SetParamNormalized(track, fx, p, step / 100)
+      return text
+    end
+  end
+  error("no setting " .. want .. " for parameter " .. p)
+end
+
+local function set_band(track, fx, map, i, band)
+  local n = tostring(i)
+  local function p(base, unit) return param(map, base .. n .. (unit or ""), base .. n) end
+  local shown = { type = band.type }
+  R.TrackFX_SetParamNormalized(track, fx, p("visible"), 1)
+  R.TrackFX_SetParamNormalized(track, fx, p("enable"), 1)
+  set_number(track, fx, p("type"), FIX_TYPES[band.type])
+  shown.hz = set_number(track, fx, p("frequency", "hz"), band.hz)
+  if band.type == "highpass" or band.type == "lowpass" then
+    shown.slope = set_number(track, fx, p("order"), band.slope or 12)
+  else
+    shown.db = set_number(track, fx, p("gain", "db"), band.db or 0)
+    shown.q = set_number(track, fx, p("q"), band.q or (band.type == "bell" and 1 or 0.707))
+  end
+  local duck = band.duck
+  if duck then
+    R.TrackFX_SetParamNormalized(track, fx, p("bypassdynamics"), 0)
+    shown.duck_db = set_number(track, fx, p("range", "db"), duck.db)
+    shown.threshold_db = set_number(track, fx, p("thresha", "db"), duck.threshold_db)
+    shown.attack_ms = set_number(track, fx, p("time", "ms"), duck.attack_ms or 10)
+    shown.release_ms = set_number(track, fx, p("release", "ms"), duck.release_ms or 150)
+  else
+    set_number(track, fx, p("range", "db"), 0)
+    R.TrackFX_SetParamNormalized(track, fx, p("bypassdynamics"), 1)
+  end
+  return shown
+end
+
+local function add_keys(track, fx, keys)
+  local guids, state = {}, { nchan = R.GetMediaTrackInfo_Value(track, "I_NCHAN"),
+    mainsend = R.GetMediaTrackInfo_Value(track, "C_MAINSEND_NCH") }
+  if state.nchan < 4 then R.SetMediaTrackInfo_Value(track, "I_NCHAN", 4) end
+  R.SetMediaTrackInfo_Value(track, "C_MAINSEND_NCH", 2)
+  R.TrackFX_SetPinMappings(track, fx, 0, 2, 1 << 2, 0) -- sidechain in from channels 3/4
+  R.TrackFX_SetPinMappings(track, fx, 0, 3, 1 << 3, 0)
+  for _, key in ipairs(keys) do
+    local s = R.CreateTrackSend(key, track)
+    R.SetTrackSendInfo_Value(key, 0, s, "I_SRCCHAN", 0)
+    R.SetTrackSendInfo_Value(key, 0, s, "I_DSTCHAN", 2)
+    R.SetTrackSendInfo_Value(key, 0, s, "D_VOL", 1)
+    R.SetTrackSendInfo_Value(key, 0, s, "I_SENDMODE", 0)
+    guids[#guids + 1] = R.GetTrackGUID(key)
+  end
+  R.GetSetMediaTrackInfo_String(track, FIX_EXT, string.format("keys=%s;nchan=%d;mainsend=%d",
+    table.concat(guids, ","), math.floor(state.nchan), math.floor(state.mainsend)), true)
+end
+
+local function fix(request)
+  local base = find_tab(request.base)
+  if base and R.IsProjectDirty(base) == 1 then
+    return answer({ ok = false, message = "The mix session has unsaved changes in REAPER. Save it, then try again." })
+  end
+  R.OnStopButton()
+  if base and request.close_base then
+    R.SelectProjectInstance(base)
+    R.Main_OnCommand(40860, 0) -- close that tab: it's the last fix, and this one replaces it
+  end
+  R.Main_OnCommand(40859, 0) -- new project tab
+  R.Main_openProject("noprompt:" .. request.mix)
+  local _, open_file = R.EnumProjects(-1)
+  if open_file ~= request.mix then
+    return answer({ ok = false, message = "REAPER didn't open " .. request.mix })
+  end
+
+  local targets = {}
+  for _, entry in ipairs(request.tracks) do
+    local track = find_track(entry)
+    if not track then return give_up("no track " .. entry.name .. " in the mix session") end
+    local keys = {}
+    for _, ref in ipairs(entry.keys or {}) do
+      local key = find_track(ref)
+      if not key then return give_up("no key track " .. ref.name .. " in the mix session") end
+      keys[#keys + 1] = key
+    end
+    targets[#targets + 1] = { entry = entry, track = track, keys = keys }
+  end
+
+  R.Undo_BeginBlock()
+  R.PreventUIRefresh(1)
+  clear_fixes()
+  local applied = {}
+  for _, t in ipairs(targets) do
+    local fx = R.TrackFX_AddByName(t.track, FIX_FX, false, -1)
+    if fx < 0 then error("couldn't add " .. FIX_FX .. " to " .. t.entry.name) end
+    R.TrackFX_SetNamedConfigParm(t.track, fx, "renamed_name", FIX_NAME)
+    local map, bands = param_names(t.track, fx), {}
+    for i, band in ipairs(t.entry.bands) do bands[i] = set_band(t.track, fx, map, i, band) end
+    if #t.keys > 0 then
+      set_text(t.track, fx, param(map, "inputbus"), "Ext")
+      add_keys(t.track, fx, t.keys)
+    end
+    applied[#applied + 1] = { name = t.entry.name, bands = bands }
+  end
+  R.PreventUIRefresh(-1)
+  R.UpdateArrange()
+  R.Undo_EndBlock("Empire: fix the mix", -1)
+  R.Main_SaveProject(0, false)
+  answer({ ok = true, fixed = request.mix, applied = applied })
+end
+
+local ACTIONS = { print = print_pass, fix = fix, bounce = bounce }
+
 local ok, request = pcall(read_request)
 if not ok then
   answer({ ok = false, message = "can't read the request: " .. tostring(request) })
 elseif request then
-  local done, problem = pcall(request.action == "print" and print_pass or bounce, request)
+  local done, problem = pcall(ACTIONS[request.action] or bounce, request)
   if not done then
     local message = "the script failed: " .. tostring(problem)
     local _, open_file = R.EnumProjects(-1)

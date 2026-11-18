@@ -171,6 +171,29 @@ class Clashes(unittest.TestCase):
 
 
 class Pieces(unittest.TestCase):
+    def test_two_tracks_with_one_name_get_their_folder_or_number(self):
+        entries = [{"name": "Kick 3/4", "parent": "Drums", "file": "/p/13 Kick 3_4.wav"},
+                   {"name": "Kick 3/4", "parent": "Drums Live", "file": "/p/22 Kick 3_4.wav"},
+                   {"name": "Bass", "parent": "BASS", "file": "/p/30 Bass.wav"}]
+        self.assertEqual(mc.labels(entries), ["Kick (Drums)", "Kick (Drums Live)", "Bass"])
+        old = [{"name": "Kick 3/4", "file": "/p/13 Kick 3_4.wav"}, {"name": "Kick", "file": "/p/22 Kick.wav"}]
+        self.assertEqual(mc.labels(old), ["Kick (track 13)", "Kick (track 22)"])
+
+    def test_both_kicks_are_measured_apart(self):
+        with tempfile.TemporaryDirectory() as root:
+            folder = pass_folder(root, "p", {"Kick 3/4": kick(60, 1, 16), "Bass": tone(82.4)})
+            with open(os.path.join(folder, "print.json")) as f:
+                doc = json.load(f)
+            second = dict(doc["tracks"][0], parent="Drums Live")
+            second["file"] = os.path.join(folder, "Kick2.wav")
+            write_wav(second["file"], kick(70, 1, 16))
+            doc["tracks"][0]["parent"] = "Drums"
+            doc["tracks"].append(second)
+            with open(os.path.join(folder, "print.json"), "w") as f:
+                json.dump(doc, f)
+            names = {t["name"] for t in mc.check(folder)["tracks"]}
+            self.assertEqual(names, {"Kick (Drums)", "Kick (Drums Live)", "Bass"})
+
     def test_bar_ranges_bridge_one_bar_gaps(self):
         self.assertEqual(mc.bar_ranges([3, 4, 5, 7, 11]), [[3, 7], [11, 11]])
 

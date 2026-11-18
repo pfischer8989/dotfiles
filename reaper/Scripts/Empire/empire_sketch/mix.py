@@ -3,12 +3,14 @@
 starts it.
 
     mix.py bounce <song> [master.RPP]   print a master's tracks into a new mix session
-    mix.py print <song>                 print the newest saved mix session for measuring
+    mix.py print <song> [mix.RPP]       print the newest saved mix session for measuring
     mix.py wait                         keep waiting for a job that ran past the wait
 
 A session is mix-<stamp>.RPP in the song's folder. Its audio is in mix-<stamp>/stems/
 and each pass's prints in mix-<stamp>/passes/pass-<n>/. The master is never touched,
-and bounce works from the newest master unless told which.
+and bounce works from the newest master unless told which. mix_fix.py makes a new
+session from the newest one, which then becomes the newest; print says which earlier
+pass to compare with, following a session back to the one it came from.
 """
 
 import glob
@@ -49,6 +51,48 @@ def newest(folder, prefix):
     return found[-1] if found else None
 
 
+def session_info(session):
+    path = os.path.join(session[: -len(".RPP")], "session.json")
+    if not os.path.exists(path):
+        return {}
+    with open(path) as f:
+        return json.load(f)
+
+
+def current_session(folder, session=None):
+    """The newest mix session, unless one is named. An older one saved after it means
+    Paul mixed in the wrong tab, so say so instead of printing the wrong one."""
+    if session:
+        if not os.path.exists(session):
+            raise MixError(f"no mix session {session}")
+        return session
+    mix = newest(folder, "mix")
+    if not mix:
+        raise MixError(f"no mix session in {folder}. Bounce one first.")
+    later = [s for s in glob.glob(os.path.join(folder, "mix-*.RPP"))
+             if s != mix and os.path.getmtime(s) > os.path.getmtime(mix) + 2]
+    if later:
+        raise MixError(f"{os.path.basename(later[0])} was saved after the newest session, "
+                       f"{os.path.basename(mix)}. Mix in the newest one, or name the session to print.")
+    return mix
+
+
+def last_pass(session):
+    """The newest printed pass of a session, or of the session it was made from."""
+    seen = set()
+    while session and session not in seen:
+        seen.add(session)
+        passes = os.path.join(session[: -len(".RPP")], "passes")
+        numbers = [int(m.group(1)) for m in (re.fullmatch(r"pass-(\d+)", n) for n in
+                                             (os.listdir(passes) if os.path.isdir(passes) else [])) if m]
+        found = [n for n in sorted(numbers, reverse=True)
+                 if os.path.exists(os.path.join(passes, f"pass-{n}", "print.json"))]
+        if found:
+            return os.path.join(passes, f"pass-{found[0]}")
+        session = session_info(session).get("from")
+    return None
+
+
 def next_pass(session):
     passes = os.path.join(session[: -len(".RPP")], "passes")
     numbers = [int(m.group(1)) for m in (re.fullmatch(r"pass-(\d+)", n) for n in
@@ -70,14 +114,13 @@ def bounce_request(song, root, master=None, now=time.strftime):
     return {"action": "bounce", "base": base, "mix": mix, "stems": stems}
 
 
-def print_request(song, root):
-    folder = os.path.join(root, slug(song))
-    mix = newest(folder, "mix")
-    if not mix:
-        raise MixError(f"no mix session in {folder}. Bounce one first.")
-    with open(os.path.join(mix[: -len(".RPP")], "session.json")) as f:
-        master = json.load(f)["master"]
-    return {"action": "print", "mix": mix, "folder": next_pass(mix), "master": master}
+def print_request(song, root, session=None):
+    mix = current_session(os.path.join(root, slug(song)), session)
+    master = session_info(mix).get("master")
+    if not master:
+        raise MixError(f"{mix} has no session.json naming its master")
+    return {"action": "print", "mix": mix, "folder": next_pass(mix), "master": master,
+            "previous": last_pass(mix)}
 
 
 def wait_for(result, wait=WAIT_SECONDS, pause=1):
@@ -110,7 +153,7 @@ def discard(request):
     shutil.rmtree(request["mix"][: -len(".RPP")])
 
 
-def finish(answer):
+def finish(answer, request=None):
     if answer is None:
         print("STILL RUNNING: REAPER is working. Run `mix.py wait`, and don't start another job.")
         sys.exit(STILL_RUNNING)
@@ -125,6 +168,8 @@ def finish(answer):
             print("played everything on one output, so printed per drum: " + ", ".join(answer["split"]))
     else:
         print(f"pass {answer['folder']}: {answer['tracks']} tracks")
+        if request and request.get("previous"):
+            print(f"compare with {request['previous']}")
     print(f"took {answer['seconds']} seconds")
 
 
@@ -139,8 +184,9 @@ def main():
             if answer is not None and not answer.get("ok"):
                 discard(request)
             finish(answer)
-        elif len(args) == 2 and args[0] == "print":
-            finish(run(print_request(args[1], root), root))
+        elif len(args) in (2, 3) and args[0] == "print":
+            request = print_request(args[1], root, args[2] if len(args) == 3 else None)
+            finish(run(request, root), request)
         else:
             raise SystemExit(__doc__)
     except MixError as problem:
