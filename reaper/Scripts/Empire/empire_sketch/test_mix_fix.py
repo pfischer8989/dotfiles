@@ -160,22 +160,46 @@ class Report(unittest.TestCase):
                 "mix": {"rms_db": mix_rms}, "findings": list(findings)}
 
     def test_says_what_each_fix_did(self):
-        doc = fixes({"id": 1, "track": "Chords", "against": "Lead", "bands": [bell(700, q=1.0)]},
-                    {"id": 2, "track": "Bass", "against": "Kick (Drums)", "bands": [{"type": "lowshelf", "hz": 100, "db": -2}]})
-        # Bands 13-15 are 400-794 Hz; band 3 is 63 Hz.
-        before = self.check({"Chords + Lead": {"13": 4.0, "14": 6.0, "15": 2.0}, "Bass + Kick (Drums)": {"3": 5.0}},
-                            {"Chords": -25.0, "Bass": -20.0, "Lead": -22.0, "Kick (Drums)": -27.0}, -13.2)
-        after = self.check({"Chords + Lead": {"13": 1.0, "14": 2.0}, "Bass + Kick (Drums)": {"3": 6.5}},
-                           {"Chords": -26.2, "Bass": -21.0, "Lead": -22.0, "Kick (Drums)": -27.0}, -13.6,
+        try:
+            import numpy as np
+            from test_mix_check import write_wav, RATE
+        except ImportError:
+            self.skipTest("needs numpy")
+        t = np.arange(RATE * 8) / RATE
+        lead_on = (t % 2) < 1  # the Lead plays every other second
+        lead = 0.1 * np.sin(2 * np.pi * 700 * t) * lead_on
+        chords = 0.2 * np.sin(2 * np.pi * 650 * t)
+        ducked = chords * np.where(lead_on, 10 ** (-6 / 20), 1.0)  # a duck: down only while the Lead plays
+        cut = chords * 10 ** (-6 / 20)  # a plain cut: down all the time
+
+        def a_pass(root, name, chord_audio):
+            folder = os.path.join(root, name)
+            os.makedirs(folder)
+            tracks = []
+            for n, number, audio in (("Chords", 40, chord_audio), ("Lead", 41, lead)):
+                path = os.path.join(folder, f"{number} {n}.wav")
+                write_wav(path, audio)
+                tracks.append({"name": n, "file": path, "number": number})
+            with open(os.path.join(folder, "print.json"), "w") as f:
+                json.dump({"tracks": tracks}, f)
+            return folder
+
+        doc = fixes({"id": 1, "track": "Chords", "against": "Lead", "hz_range": [500, 900], "bands": [bell(700)]})
+        levels = {"Chords": -17.0, "Lead": -26.0}
+        before = self.check({"Chords + Lead": {"14": 6.0}}, levels, -13.0)
+        after = self.check({"Chords + Lead": {"14": 5.5}}, levels, -13.2,
                            [{"tracks": ["Chords", "Pad"], "low_hz": 177, "high_hz": 561, "change": "worse"}])
-        result = mf.report(doc, after, before)
-        one, two = result["fixes"]
-        self.assertEqual((one["before"], one["after"], one["result"]), (12.0, 3.0, "better"))
-        self.assertEqual(one["track_rms_change_db"], -1.2)
-        self.assertEqual(one["worse_elsewhere"], ["Chords + Pad 177-561 Hz (worse)"])
-        self.assertEqual(two["result"], "worse")
-        self.assertEqual(result["mix_rms_change_db"], -0.4)
-        self.assertIn("| 1 | Chords | Lead |", mf.markdown(result))
+        with tempfile.TemporaryDirectory() as root:
+            old = a_pass(root, "before", chords)
+            duck = mf.report(doc, after, before, a_pass(root, "duck", ducked), old)["fixes"][0]
+            plain = mf.report(doc, after, before, a_pass(root, "cut", cut), old)["fixes"][0]
+        self.assertEqual(duck["result"], "better")
+        self.assertAlmostEqual(duck["stands_out_after_db"] - duck["stands_out_before_db"], 6.0, delta=0.5)
+        self.assertAlmostEqual(duck["lost_alone_db"], 0.0, delta=0.3)
+        self.assertAlmostEqual(plain["lost_alone_db"], -6.0, delta=0.3)
+        self.assertEqual((duck["clash_before"], duck["clash_after"]), (6.0, 5.5))
+        self.assertEqual(duck["worse_elsewhere"], ["Chords + Pad 177-561 Hz (worse)"])
+        self.assertIn("| 1 | Chords | Lead | 500-900 |", mf.markdown(mf.report(doc, after, before)))
 
     def test_a_track_missing_from_a_pass_isnt_called_better(self):
         doc = fixes({"id": 1, "track": "Chords", "against": "Lead", "bands": [bell(700)]})
@@ -193,8 +217,7 @@ class Report(unittest.TestCase):
         after["tracks"][1].update(track="Kick 3/4", number=13)
         after["tracks"][0].update(track="Bass", number=31)
         row = mf.report(doc, after, before)["fixes"][0]
-        self.assertEqual((row["against"], row["before"], row["after"], row["result"]),
-                         ("Kick (Atlas Kit)", 8.0, 2.0, "better"))
+        self.assertEqual((row["against"], row["clash_before"], row["clash_after"]), ("Kick (Atlas Kit)", 8.0, 2.0))
 
     def test_ranges(self):
         self.assertEqual(mf.fix_range({"bands": [{"type": "highpass", "hz": 200}]}), (20.0, 280.0))

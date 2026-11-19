@@ -3,14 +3,15 @@
 measured against the pass they were made from. REAPER has to be running.
 
     mix_fix.py apply <song> <fixes.json>                      a new session with the moves in
-    mix_fix.py report <fixes.json> <pass> <earlier pass>      what each move did
+    mix_fix.py report <fixes.json> <pass> <earlier pass>      what each move did (needs numpy)
 
 apply copies the newest session to a new mix-<stamp>.RPP, which becomes the newest, and
 writes every move in the file into it: on each track it names, one TB Equalizer Pro
 called "TB Equalizer Pro (Empire Fix)", after whatever is on the track. The file is the
 whole set of Empire's moves, so earlier Empire Fix instances are replaced, not added to.
 Paul's own plugins aren't touched. Then `mix.py print` prints the new session and
-`mix_check.py` measures it, and report says per fix whether its clash got smaller.
+`mix_check.py` measures it, and report says per fix whether the track it protects
+stands out more from the fixed one, and what the fixed track lost elsewhere.
 
 {"schema": "empire.mixfix/v1", "fixes": [
   {"id": 1, "track": "Chords", "against": "Lead", "why": "Chords covers Lead in the Hooks",
@@ -251,13 +252,67 @@ def levels(check):
     return {t["name"]: t["rms_db"] for t in check.get("tracks", [])}
 
 
-def report(doc, after, before):
-    """Fixes name tracks as the earlier pass did; a track whose label has changed since
-    is found under its new one."""
+EXPOSED_DB = 1.0  # the protected track stands out this much more, or less, for "better" or "worse"
+PLAYS_BELOW_LOUD_DB = 20.0
+SILENT_DB = -80.0
+
+
+def band_levels(path, low, high):
+    """A track's level in dB between low and high Hz, per frame, as mix_check frames it."""
+    import numpy as np
+    from mix_check import HOP, read_wav
+    audio, rate = read_wav(path)
+    signal = (audio[:, :2].mean(axis=1) if audio.shape[1] > 1 else audio[:, 0]).astype(np.float32)
+    window = 4096
+    shape = np.hanning(window).astype(np.float32)
+    scale = 2 / (window * np.sum(shape ** 2))
+    freqs = np.fft.rfftfreq(window, 1 / rate)
+    keep = (freqs >= low) & (freqs <= high)
+    out = []
+    for first in range(0, max(1, len(signal) - window), HOP * 256):
+        frames = [signal[i:i + window] for i in range(first, min(first + HOP * 256, len(signal) - window), HOP)]
+        if frames:
+            power = np.abs(np.fft.rfft(np.stack(frames) * shape, axis=1))[:, keep] ** 2 * scale
+            out.append(10 * np.log10(np.maximum(power.sum(axis=1), 1e-12)))
+    return np.concatenate(out) if out else np.zeros(0)
+
+
+def exposure(track_file, against_file, low, high):
+    """How far `against` stands above the fixed track in the band while `against` plays,
+    and the fixed track's own level where `against` is silent."""
+    import numpy as np
+    track, against = band_levels(track_file, low, high), band_levels(against_file, low, high)
+    n = min(len(track), len(against))
+    track, against = track[:n], against[:n]
+    heard = against[against > SILENT_DB]
+    if heard.size == 0:
+        return None
+    plays = against > np.percentile(heard, 90) - PLAYS_BELOW_LOUD_DB
+    alone = (against <= SILENT_DB) & (track > SILENT_DB)
+    return {"stands_out_db": float(np.median(against[plays] - track[plays])) if plays.any() else None,
+            "alone_db": float(np.median(track[alone])) if alone.any() else None}
+
+
+def print_files(folder):
+    """Track label -> printed file, for a pass."""
+    from mix_check import labels
+    with open(os.path.join(folder, "print.json")) as f:
+        entries = json.load(f)["tracks"]
+    return {label: e["file"] for e, label in zip(entries, labels(entries))}
+
+
+def report(doc, after, before, after_folder=None, before_folder=None):
+    """Per fix: how far the track it protects (`against`) stands out from the fixed track
+    in the fix's band while it plays, before and after; what the fixed track lost where
+    `against` is silent (a duck should lose nothing there); and the clash score. Fixes
+    name tracks as the earlier pass did; a track relabelled since is followed."""
     from mix_check import relabel, renamed
     names = relabel(before, after.get("tracks", []))
     before = renamed(before, names)
+    back = {v: k for k, v in names.items()}
     now, then = levels(after), levels(before)
+    files_after = print_files(after_folder) if after_folder else {}
+    files_before = print_files(before_folder) if before_folder else {}
     rows = []
     for fix in doc["fixes"]:
         low, high = fix_range(fix)
@@ -267,9 +322,19 @@ def report(doc, after, before):
         if missing:
             row["result"] = "not measured: " + ", ".join(missing) + " not printed in both passes (muted or silent?)"
         elif against:
-            row["before"] = pair_score(before, track, against, low, high)
-            row["after"] = pair_score(after, track, against, low, high)
-            row["result"] = verdict(row["before"], row["after"])
+            row["clash_before"] = pair_score(before, track, against, low, high)
+            row["clash_after"] = pair_score(after, track, against, low, high)
+            old = [files_before.get(back.get(x, x)) for x in (track, against)]
+            new = [files_after.get(x) for x in (track, against)]
+            if all(old) and all(new):
+                b, a = exposure(*old, low, high), exposure(*new, low, high)
+                if b and a and b["stands_out_db"] is not None and a["stands_out_db"] is not None:
+                    row["stands_out_before_db"] = round(b["stands_out_db"], 1)
+                    row["stands_out_after_db"] = round(a["stands_out_db"], 1)
+                    if b["alone_db"] is not None and a["alone_db"] is not None:
+                        row["lost_alone_db"] = round(a["alone_db"] - b["alone_db"], 1)
+                    row["result"] = verdict(b["stands_out_db"], a["stands_out_db"])
+            row.setdefault("result", "not measured: no prints to compare")
         if track in now and track in then:
             row["track_rms_change_db"] = round(now[track] - then[track], 1)
         row["worse_elsewhere"] = [f"{' + '.join(f['tracks'])} {f['low_hz']}-{f['high_hz']} Hz ({f['change']})"
@@ -284,26 +349,30 @@ def report(doc, after, before):
 
 
 def verdict(before, after):
-    if before == 0:
-        return "no clash to fix" if after == 0 else "worse"
-    if after < before * (1 - SAME_SHARE):
+    """By how far the protected track stands out: more is better."""
+    if after - before >= EXPOSED_DB:
         return "better"
-    if after > before * (1 + SAME_SHARE):
+    if before - after >= EXPOSED_DB:
         return "worse"
     return "same"
 
 
 def markdown(result):
     lines = ["# What the fixes did", "",
-             "Measured, not heard: \"better\" means the clash scores lower, not that it sounds better. "
-             "Anything else that changed in the session since the earlier pass shows up here too.", "",
-             "| Fix | Track | Against | Hz | Clash before | After | Result | Track level | Worse elsewhere |",
-             "|---|---|---|---|---|---|---|---|---|"]
+             "Measured, not heard. *Stands out* is how far the protected track (Against) sits above the "
+             "fixed one in the fix's band while it plays: more is better. *Lost alone* is what the fixed "
+             "track lost where Against is silent: a duck should lose nothing there, a plain cut loses its "
+             "depth. Anything else that changed in the session since the earlier pass shows up here too.", "",
+             "| Fix | Track | Against | Hz | Stands out before | After | Result | Lost alone | Track level | Clash score | Worse elsewhere |",
+             "|---|---|---|---|---|---|---|---|---|---|---|"]
+    def db(v, signed=False):
+        return "-" if v is None else (f"{v:+.1f} dB" if signed else f"{v:.1f} dB")
     for r in result["fixes"]:
-        change = r.get("track_rms_change_db")
+        clash = (f"{r['clash_before']} to {r['clash_after']}" if "clash_before" in r else "-")
         lines.append(f"| {r['id']} | {r['track']} | {r.get('against') or '-'} | {r['hz'][0]}-{r['hz'][1]} | "
-                     f"{r.get('before', '-')} | {r.get('after', '-')} | {r.get('result', '-')} | "
-                     f"{'-' if change is None else f'{change:+.1f} dB'} | {'; '.join(r['worse_elsewhere']) or '-'} |")
+                     f"{db(r.get('stands_out_before_db'))} | {db(r.get('stands_out_after_db'))} | {r.get('result', '-')} | "
+                     f"{db(r.get('lost_alone_db'), True)} | {db(r.get('track_rms_change_db'), True)} | {clash} | "
+                     f"{'; '.join(r['worse_elsewhere']) or '-'} |")
     if "mix_rms_change_db" in result:
         lines += ["", f"Full mix RMS: {result['mix_rms_change_db']:+.1f} dB since the earlier pass."]
     return "\n".join(lines) + "\n"
@@ -334,7 +403,7 @@ def main():
                 after = json.load(f)
             with open(os.path.join(args[3], "mix-check.json")) as f:
                 before = json.load(f)
-            result = report(doc, after, before)
+            result = report(doc, after, before, args[2], args[3])
             with open(os.path.join(args[2], "fix-report.json"), "w") as f:
                 json.dump(result, f, indent=1)
             text = markdown(result)
