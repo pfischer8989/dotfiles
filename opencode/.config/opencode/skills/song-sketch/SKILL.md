@@ -214,9 +214,10 @@ there too.
 ## Checking a mix
 
 A mix session is `mix-<stamp>.RPP` in the song's folder. Paul mixes in it; you measure
-it and say where to listen. Paul does the EQ, because finding the clash by ear is the
-part he has trouble with. Start the session only if the song has none, or he asks for
-a new one:
+it and say where to listen. Finding the clash by ear is the part he has trouble with,
+so a Mix Analysis run can also make EQ moves for him (see "Fixing a mix"), each in a
+plugin of its own that he can bypass, change or delete. Start the session only if the
+song has none, or he asks for a new one:
 
 ```bash
 python3 ~/dotfiles/reaper/Scripts/Empire/empire_sketch/mix.py bounce "<song>"
@@ -229,9 +230,11 @@ python3 ~/dotfiles/reaper/Scripts/Empire/empire_sketch/mix.py print "<song>"
 ~/.venvs/reaper-audio/bin/python ~/dotfiles/reaper/Scripts/Empire/empire_sketch/mix_check.py <pass folder> --previous <last pass folder>
 ```
 
-Leave out `--previous` if there's no earlier pass. If `mix.py` says `STILL RUNNING`, run
-`mix.py wait`. If it says the session has unsaved changes, report that and stop: Paul
-has to save it. Don't edit project files yourself. Read `mix-check.md` and
+`mix.py print` names the pass to compare with ("compare with ..."): pass that as
+`--previous`, and leave it out if there's none. If `mix.py` says `STILL RUNNING`, run
+`mix.py wait`. If it says the session has unsaved changes, or that an older session was
+saved after the newest, report that and stop: Paul has to save, or say which session he
+mixed in. Don't edit project files yourself; mix_fix.py is the only way you change one. Read `mix-check.md` and
 `mix-check.json` from the pass folder and copy both into your artifacts folder.
 
 The report ranks every clash it can find, and most of a full arrangement overlaps
@@ -255,3 +258,60 @@ It measures and doesn't hear. Say so, and never claim how anything sounds. Rever
 delays add to the level in the mix, but clashes with them aren't listed. Bus plugins
 and bus automation aren't in the track prints: only the bus faders are counted, and
 `mix.wav` is the only print through the buses and master.
+
+## Fixing a mix
+
+You write EQ moves as a list, and `mix_fix.py` puts them into a new copy of the newest
+session: on each track you name, one TB Equalizer Pro called "TB Equalizer Pro (Empire
+Fix)", after Paul's own plugins, which it never touches. The new session becomes the
+newest, so Paul carries on in it, and the one before is kept to compare with. The list
+is every move you want, not an addition: applying it again replaces all Empire Fix
+instances. On a later pass, start from the last session's `fixes.json` and change only
+what his note asks.
+
+```json
+{"schema": "empire.mixfix/v1", "fixes": [
+  {"id": 1, "track": "Chords", "against": "Lead", "why": "Chords covers Lead by 12.3 dB at 354-1122 Hz in every Hook",
+   "hz_range": [354, 1122],
+   "bands": [{"type": "bell", "hz": 700, "q": 1.0, "db": 0, "duck": {"key": "Lead", "db": -5}}]},
+  {"id": 2, "track": "Bass", "against": "Kick (Atlas Kit)", "why": "peaks at 67 and 70 Hz",
+   "bands": [{"type": "bell", "hz": 68, "q": 1.4, "db": 0, "duck": {"key": "Kick (Atlas Kit)", "db": -6}}]},
+  {"id": 3, "track": "Chords", "against": "Bass", "why": "Chords covers Bass by 6.8 dB at 177-281 Hz",
+   "bands": [{"type": "highpass", "hz": 180, "slope": 12}]}]}
+```
+
+- `track` is the track the moves go on, `against` the one they make room for. Name
+  them as the check pass's mix-check.json does ("Kick (Atlas Kit)" when two tracks
+  share a name). `hz_range` is the clash's range from mix-check, for the report.
+- A band is a `bell`, `lowshelf` or `highshelf` (hz, db, q) or a `highpass` or
+  `lowpass` (hz, slope 6/12/18/24). Limits: cut to -6 dB, boost to +3, q 0.3-4,
+  highpass up to 400 Hz, lowpass from 2 kHz, 6 bands a track, 8 fixes a list. The
+  script refuses a list outside them and says what to change.
+- `duck` makes the band cut by up to its db (to -9) only while the key track plays in
+  that band, through the track's sidechain; between the key's notes the track is whole.
+  Prefer it when the two play at different moments (kick and bass, a lead over chords);
+  use a plain cut or a high-pass when the masking track never needs that range. Leave
+  out `threshold_db`: it's set 12 dB under the key's loud moments. One key per track.
+- Move what the numbers show: a sustained note's fundamental doesn't move with EQ, so
+  for two parts on the same notes, suggest the note change in the report instead.
+- Don't fix more than the clashes you were asked about, or the five you'd report.
+
+Then apply, print and measure the new session against the check pass (apply names it),
+and report per fix:
+
+```bash
+E=~/dotfiles/reaper/Scripts/Empire/empire_sketch
+~/.venvs/reaper-audio/bin/python $E/mix_fix.py apply "<song>" fixes.json
+python3 $E/mix.py print "<song>"
+~/.venvs/reaper-audio/bin/python $E/mix_check.py <new pass> --previous <check pass>
+~/.venvs/reaper-audio/bin/python $E/mix_fix.py report <session folder>/fixes.json <new pass> <check pass>
+```
+
+The report says, per fix, how far the protected track stands out from the fixed one in
+that band while it plays, before and after (more is better); what the fixed track lost
+where the protected one is silent (a duck should lose about nothing, a plain cut loses
+its depth); and anything else involving the track that got worse. A fix that comes out
+"same" or "worse", or makes something else worse, goes: drop or soften it and apply
+again, once. Clash scores barely move for a duck, because the kick still covers the bass,
+only by more; go by "stands out". It measures and doesn't hear: say which fixes to A/B
+first, and how (bypass the Empire Fix plugin on that track, loop the bars).

@@ -87,6 +87,15 @@ ln -sfn ~/dotfiles/reaper/Scripts/Empire ~/Library/Application\ Support/REAPER/S
   reports where tracks clash: pair, frequencies, bars, who covers whom, and the notes
   in range. It needs numpy: `python3 -m venv ~/.venvs/reaper-audio &&
   ~/.venvs/reaper-audio/bin/pip install numpy`. Tests: `test_mix.py`, `test_mix_check.py`.
+  Print refuses an older session saved after the newest, and names the pass to compare with.
+- `empire_sketch/mix_fix.py apply <song> <fixes.json>` writes EQ moves into a new copy of
+  the newest session (the Empire Mix `fix` action): one TB Equalizer Pro named
+  "TB Equalizer Pro (Empire Fix)" per track, after its own plugins. Ducking bands use the
+  plugin's sidechain-keyed filter types (31-33: bell, low shelf, high shelf), with the key
+  track sent to channels 3/4 and wired to its SideChain L/R pins; the track's send to its
+  folder stays on 1/2. The list is the whole set, so applying again replaces earlier
+  fixes. `mix_fix.py report` says per fix how far the protected track stands out from the
+  fixed one in that band, and what the fixed track lost elsewhere. Tests: `test_mix_fix.py`.
 - `empire_sketch/check_sketch.py` checks a sketch and installs it for the build;
   `empire_sketch/read_master.py` turns a saved master into facts per section. The
   Song Sketch and Song Analysis workflows use both, through the `song-sketch` skill.
