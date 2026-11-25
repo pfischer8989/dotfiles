@@ -93,6 +93,32 @@ with tempfile.TemporaryDirectory() as root:
     cs.install(path, "Goa Sketch 2", root)
     check("old one is kept", len(os.listdir(os.path.dirname(target))), 2)
 
+# Building in REAPER: never starts REAPER, and waits for this sketch's line in sketch.log.
+with tempfile.TemporaryDirectory() as root:
+    target = os.path.join(root, "song", "sketch.json")
+    log = os.path.join(root, "sketch.log")
+    with open(log, "w") as f:
+        f.write(f"2026-11-01 10:00:00 built {target}: 10 clips, old build\n")
+    started = []
+    try:
+        cs.build(target, root, running=lambda: False, start=lambda: started.append(1))
+        check("closed REAPER isn't built", "built", "raised")
+    except cs.BuildError as why:
+        check("closed REAPER says so", "isn't open" in str(why), True)
+    check("closed REAPER isn't started", started, [])
+
+    def logs_it():
+        with open(log, "a") as f:
+            f.write("2026-11-25 13:28:49 Drums on VST3i: Atlas (Algonaut)\n")
+            f.write(f"2026-11-25 13:28:57 built {target}: 120 clips, 10 parts\n")
+    check("built line", cs.build(target, root, running=lambda: True, start=logs_it, pause=0),
+          f"{target}: 120 clips, 10 parts")
+    try:
+        cs.build(target, root, running=lambda: True, start=lambda: None, wait=0, pause=0)
+        check("an old build line doesn't count", "built", "raised")
+    except cs.BuildError as why:
+        check("silent REAPER times out", "didn't finish" in str(why), True)
+
 # A second kit: a part named "Drums Live" on Superior plays GM drum notes too.
 d = doc()
 d["parts"].append({"name": "Drums Live", "template": "Superior Drummer Kit"})

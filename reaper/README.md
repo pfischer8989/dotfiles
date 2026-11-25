@@ -96,7 +96,8 @@ ln -sfn ~/dotfiles/reaper/Scripts/Empire ~/Library/Application\ Support/REAPER/S
   folder stays on 1/2. The list is the whole set, so applying again replaces earlier
   fixes. `mix_fix.py report` says per fix how far the protected track stands out from the
   fixed one in that band, and what the fixed track lost elsewhere. Tests: `test_mix_fix.py`.
-- `empire_sketch/check_sketch.py` checks a sketch and installs it for the build;
+- `empire_sketch/check_sketch.py` checks a sketch, installs it and builds it in the
+  REAPER that's open (never starting one), waiting for Empire Build Sketch to log it;
   `empire_sketch/read_master.py` turns a saved master into facts per section. The
   Song Sketch and Song Analysis workflows use both, through the `song-sketch` skill.
   Tests: `python3 empire_sketch/test_check_sketch.py` and `test_read_master.py`.

@@ -5,13 +5,16 @@ Empire Build Sketch looks. Exits 1 and lists every problem if it isn't usable.
     check_sketch.py <sketch.json>
     check_sketch.py <sketch.json> --install <song>   (also copies it into
         ~/.empire/reaper/sketches/<song>/ and makes it the latest; a sketch
-        already there is kept under a dated name)
+        already there is kept under a dated name. Then it builds the sketch in
+        the REAPER that's open, so Paul can pick: it never starts REAPER, and
+        says "not built" with the reason when it can't)
 """
 
 import json
 import os
 import re
 import shutil
+import subprocess
 import sys
 import time
 
@@ -22,6 +25,9 @@ KICKS = {35, 36}
 MIN_UNIQUE_CLIPS = 0.75
 RING_WARNING = 0.5
 SKETCHES = "~/.empire/reaper/sketches"
+REAPER = "/Applications/REAPER.app/Contents/MacOS/REAPER"
+BUILD_SCRIPT = "~/Library/Application Support/REAPER/Scripts/Empire/Empire Build Sketch.lua"
+BUILD_SECONDS = 180
 
 
 KIT_TEMPLATES = {"Atlas Kit", "Superior Drummer Kit"}
@@ -196,6 +202,48 @@ def install(path, song, root=SKETCHES):
     return target
 
 
+def reaper_running():
+    try:
+        return subprocess.run(["pgrep", "-x", "REAPER"], stdout=subprocess.DEVNULL).returncode == 0
+    except OSError:
+        return False
+
+
+def start_build():
+    """Hands Empire Build Sketch to the REAPER that's open (-nonewinst never starts one)."""
+    try:
+        subprocess.run([REAPER, "-nonewinst", os.path.expanduser(BUILD_SCRIPT)], stdout=subprocess.DEVNULL,
+                       stderr=subprocess.DEVNULL, timeout=60, check=False)
+    except subprocess.TimeoutExpired:
+        pass  # REAPER has it; sketch.log says when it's built
+
+
+def build(target, root=SKETCHES, running=reaper_running, start=start_build, wait=BUILD_SECONDS, pause=1):
+    """Builds the installed sketch in REAPER and waits for Empire Build Sketch to log
+    it. Returns the log line, or raises BuildError saying why it isn't built."""
+    if not running():
+        raise BuildError("REAPER isn't open on this machine. Open it and run Empire Build Sketch.")
+    log = os.path.join(os.path.expanduser(root), "sketch.log")
+    seen = os.path.getsize(log) if os.path.exists(log) else 0
+    start()
+    end = time.time() + wait
+    while True:
+        if os.path.exists(log):
+            with open(log) as f:
+                f.seek(seen)
+                for line in f.read().splitlines():
+                    if f" built {target}:" in line:
+                        return line.split(" built ", 1)[1]
+        if time.time() >= end:
+            raise BuildError(f"REAPER didn't finish building it in {wait} seconds. Look at REAPER's "
+                             "console window, then run Empire Build Sketch.")
+        time.sleep(pause)
+
+
+class BuildError(Exception):
+    pass
+
+
 def main():
     args = sys.argv[1:]
     if len(args) not in (1, 3) or (len(args) == 3 and args[1] != "--install"):
@@ -210,7 +258,12 @@ def main():
         print("WARNING " + w)
     print(f"ok: {len(doc['clips'])} clips, {len(doc['setup']['sections'])} sections, {len(doc['parts'])} parts")
     if len(args) == 3:
-        print("installed " + install(args[0], args[2]))
+        target = install(args[0], args[2])
+        print("installed " + target)
+        try:
+            print("built in REAPER: " + build(target))
+        except BuildError as why:
+            print("NOT BUILT: " + str(why))
 
 
 if __name__ == "__main__":

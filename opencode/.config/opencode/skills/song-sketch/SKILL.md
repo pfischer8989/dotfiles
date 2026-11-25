@@ -153,7 +153,12 @@ warnings and fix the ones you didn't intend. Installing copies the file to
 `~/.empire/reaper/sketches/<song>/`, keeps any earlier sketch there under a dated
 name, and makes it the one **Empire Build Sketch** opens.
 
-Don't open or drive REAPER yourself: Paul runs the build.
+Then it builds the sketch in the REAPER that's open, in a new tab, and waits
+for it: `built in REAPER: ...` means Paul can start picking. It never starts
+REAPER. `NOT BUILT: <reason>` means the sketch is installed but not built (most
+often REAPER isn't open): quote the line in your report so Paul knows to open
+REAPER and run Empire Build Sketch himself. It isn't a failure of your stage.
+Don't drive REAPER any other way.
 
 ## Building the master
 
